@@ -1,0 +1,14 @@
+{
+  "train_chars": 7832,
+  "val_chars": 80,
+  "canvas_size": 256,
+  "epochs": 24,
+  "val_mean_iou_raw_serif": 0.6486,
+  "val_mean_iou_raw_sans": 0.7066,
+  "val_mean_iou_ours": 0.7816,
+  "val8_failure_set_iou_ours": 0.7941,
+  "max_phantom_ink_rate": 0.00422,
+  "min_skeleton_recall": 0.825,
+  "gb2312_synthesized_glyphs": 2983,
+  "gb2312_qa_flagged_count": 2838
+}

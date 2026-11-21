@@ -1,0 +1,15 @@
+# Python & Virtualenvs
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.uv_cache/
+
+# Large Dataset Cache & Temporary PoC Artifacts
+datasets/
+outputs/CnS-SkipPro-B-M1-PoC.otf
+outputs/m1_*
+outputs/*.log
+outputs/*outliers.json
+checkpoints/m1_*
