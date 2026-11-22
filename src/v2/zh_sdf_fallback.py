@@ -11,13 +11,14 @@ Fixes BOTH root causes of v1 neural generation defects:
 
 from __future__ import annotations
 
+import json
 import os
 import random
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import torch
@@ -284,12 +285,42 @@ class ZHSDFSynthesizer:
             cjk_ascender=880,
         )
 
-    def synthesize_batch(self, chars: List[str], batch_size: int = 32, upsample_factor: int = 3) -> dict[str, List[DrawCmd]]:
-        results: dict[str, List[DrawCmd]] = {}
+    def _vectorize_one(self, args: Tuple[str, np.ndarray, int]) -> Tuple[str, List[DrawCmd]]:
+        ch, sdf_arr, upsample_factor = args
+        raw_cmds = sdf_to_cff_commands(sdf_arr, self.upem_spec, upsample_factor=upsample_factor)
+        clean_cmds = optimize_synthesized_contours(raw_cmds, stem_concave_sagitta=0.85)
+        return ch, clean_cmds
+
+    def synthesize_batch(
+        self,
+        chars: List[str],
+        batch_size: int = 32,
+        upsample_factor: int = 3,
+        cache_path: Optional[Path] = None,
+    ) -> dict[str, List[DrawCmd]]:
+        results: Dict[str, List[DrawCmd]] = {}
+        cached_raw: Dict[str, list] = {}
+        if cache_path is not None and cache_path.exists():
+            try:
+                cached_raw = json.loads(cache_path.read_text(encoding="utf-8"))
+                for ch in chars:
+                    if ch in cached_raw:
+                        results[ch] = [
+                            (str(op), [(float(pt[0]), float(pt[1])) for pt in pts])
+                            for op, pts in cached_raw[ch]
+                        ]
+            except Exception as e:
+                print(f"[v2-SDF] Cache read warning ({cache_path}): {e}", flush=True)
+
+        missing = [c for c in chars if c not in results]
+        if not missing:
+            return results
+
         amp_dtype = torch.bfloat16 if (self.device.type == "cuda" and torch.cuda.is_bf16_supported()) else torch.float16
-        with torch.no_grad():
-            for st in range(0, len(chars), batch_size):
-                sub = chars[st : st + batch_size]
+        workers = min(8, max(4, (os.cpu_count() or 4)))
+        with torch.no_grad(), ThreadPoolExecutor(max_workers=workers) as ex:
+            for st in range(0, len(missing), batch_size):
+                sub = missing[st : st + batch_size]
                 bx_list = []
                 for ch in sub:
                     _, c_sr = self.serif_sc.get_gid_and_cmds(ch, "zh-Hans")
@@ -300,8 +331,16 @@ class ZHSDFSynthesizer:
                     pred_t, _ = self.model(xt)
                 pred_np = pred_t[:, 0].float().cpu().numpy()
 
-                for i, ch in enumerate(sub):
-                    raw_cmds = sdf_to_cff_commands(pred_np[i], self.upem_spec, upsample_factor=upsample_factor)
-                    clean_cmds = optimize_synthesized_contours(raw_cmds, stem_concave_sagitta=0.85)
+                tasks = [(ch, pred_np[i], upsample_factor) for i, ch in enumerate(sub)]
+                for ch, clean_cmds in ex.map(self._vectorize_one, tasks):
                     results[ch] = clean_cmds
+                    if cache_path is not None:
+                        cached_raw[ch] = [[op, [[round(float(x), 1), round(float(y), 1)] for x, y in pts]] for op, pts in clean_cmds]
+
+        if cache_path is not None and missing:
+            cache_path.parent.mkdir(parents=True, exist_ok=True)
+            tmp_p = cache_path.with_suffix(".tmp")
+            tmp_p.write_text(json.dumps(cached_raw, ensure_ascii=False), encoding="utf-8")
+            tmp_p.replace(cache_path)
+            print(f"[v2-SDF] Updated Tier3 vector cache ({len(cached_raw)} glyphs) -> {cache_path}", flush=True)
         return results

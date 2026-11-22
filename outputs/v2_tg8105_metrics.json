@@ -1,0 +1,25 @@
+{
+  "elapsed_sec": 1737.9,
+  "tonggui_total": 8105,
+  "coverage_by_level": {
+    "1": 3500,
+    "2": 3000,
+    "3": 1605
+  },
+  "total_covered": 8105,
+  "kept_original_skippro": 1799,
+  "synthesized_or_replaced": 6323,
+  "tier_breakdown": {
+    "Tier1": 1192,
+    "MasterDirect": 99,
+    "Tier0_IDS": 250,
+    "Tier0_DotSwap": 12,
+    "Tier0_TopDotSwap": 25,
+    "Tier3_HessianSDF": 4745
+  },
+  "median_on_curve_nodes": 150,
+  "mid_stem_violation_count": 0,
+  "orig_junction_collinear_count": 760,
+  "qa_outlier_count": 21,
+  "qa_pass_rate": 0.9967
+}

@@ -724,7 +724,11 @@ def estimate_target_slot_bboxes(
                         valid = False
                         break
             elif idc == "⿺" and len(comps) == 2:
-                if (boxes[1][2] - boxes[1][0]) < 0.45 * gw or (boxes[1][3] - boxes[1][1]) < 0.45 * gh:
+                if (
+                    comps[0] not in ("辶", "廴")
+                    or (boxes[1][2] - boxes[1][0]) < 0.45 * gw
+                    or (boxes[1][3] - boxes[1][1]) < 0.45 * gh
+                ):
                     valid = False
             elif idc in ("⿸", "⿹", "⿴", "⿵") and len(comps) == 2:
                 b0_area = (boxes[0][2] - boxes[0][0]) * (boxes[0][3] - boxes[0][1])
@@ -736,6 +740,14 @@ def estimate_target_slot_bboxes(
                     valid = False
 
             if valid:
+                if idc == "⿰" and len(comps) == 2:
+                    if boxes[0][2] > boxes[1][0] - 12.0 and boxes[0][2] > gx0 + 0.40 * gw:
+                        boxes[0] = (
+                            boxes[0][0],
+                            boxes[0][1],
+                            min(boxes[0][2], max(boxes[1][0] - 14.0, gx0 + 0.38 * gw)),
+                            boxes[0][3],
+                        )
                 return boxes
 
     # Fallback proportional partitioning (never synthesize blind boxes for enclosing frames!)
@@ -751,7 +763,7 @@ def estimate_target_slot_bboxes(
     if idc == "⿳" and len(comps) == 3:
         h3 = gh / 3.0
         return [(gx0, gy1 - h3 + 8, gx1, gy1), (gx0, gy0 + h3 + 5, gx1, gy1 - h3 - 5), (gx0, gy0, gx1, gy0 + h3 - 8)]
-    if idc == "⿺" and len(comps) == 2:
+    if idc == "⿺" and len(comps) == 2 and comps[0] in ("辶", "廴"):
         return [(gx0, gy0, gx1, gy1), (gx0 + 0.25 * gw, gy0 + 0.20 * gh, gx1 - 0.03 * gw, gy1)]
     return None
 
@@ -785,6 +797,10 @@ def compose_from_ids(
     part_cmds_list: List[List[DrawCmd]] = []
     tags: List[str] = []
     for k, comp in enumerate(comps):
+        if comp in set("丶丨丿乀乙乚亅𠃌乛"):
+            return None
+        if comp == "一" and (idc not in ("⿱", "⿳") or (slot_boxes[k][3] - slot_boxes[k][1]) > 140.0):
+            return None
         entry = bank.lookup_component(idc, k, comp, dst_bbox=slot_boxes[k], allow_standalone=True)
         if entry is not None:
             fitted = fit_component_with_stroke_compensation(entry.cmds, entry.bbox, slot_boxes[k])

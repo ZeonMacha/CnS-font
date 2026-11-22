@@ -1,0 +1,190 @@
+{
+  "calibrated_stats": {
+    "concave_sagitta_p10": 0.41,
+    "concave_sagitta_p50": 0.87,
+    "concave_sagitta_p90": 1.57,
+    "calib_false_alarm_rate": 0.17
+  },
+  "benchmarks": {
+    "红": {
+      "provenance": "Tier1[M:纟,D:矼]",
+      "passed": true,
+      "on_curve_nodes": 123,
+      "node_cap": 240,
+      "mid_stem_nodes": 0,
+      "iou_vs_sc": 0.7729,
+      "total_area": 341395.2,
+      "bbox_ok": true
+    },
+    "语": {
+      "provenance": "Tier1[M:讠,D:晤]",
+      "passed": true,
+      "on_curve_nodes": 169,
+      "node_cap": 240,
+      "mid_stem_nodes": 1,
+      "iou_vs_sc": 0.6554,
+      "total_area": 367993.6,
+      "bbox_ok": true
+    },
+    "银": {
+      "provenance": "Tier3_SDF",
+      "passed": true,
+      "on_curve_nodes": 154,
+      "node_cap": 240,
+      "mid_stem_nodes": 0,
+      "iou_vs_sc": 0.7388,
+      "total_area": 443735.2,
+      "bbox_ok": true
+    },
+    "饭": {
+      "provenance": "Tier1[M:饣,M:反]",
+      "passed": true,
+      "on_curve_nodes": 186,
+      "node_cap": 240,
+      "mid_stem_nodes": 0,
+      "iou_vs_sc": 0.6387,
+      "total_area": 417031.2,
+      "bbox_ok": true
+    },
+    "伞": {
+      "provenance": "MasterDirect",
+      "passed": true,
+      "on_curve_nodes": 57,
+      "node_cap": 174,
+      "mid_stem_nodes": 0,
+      "iou_vs_sc": 0.5035,
+      "total_area": 301483.6,
+      "bbox_ok": true
+    },
+    "丌": {
+      "provenance": "MasterDirect",
+      "passed": true,
+      "on_curve_nodes": 22,
+      "node_cap": 174,
+      "mid_stem_nodes": 0,
+      "iou_vs_sc": 0.6318,
+      "total_area": 313824.8,
+      "bbox_ok": true
+    },
+    "习": {
+      "provenance": "MasterDirect",
+      "passed": true,
+      "on_curve_nodes": 75,
+      "node_cap": 174,
+      "mid_stem_nodes": 0,
+      "iou_vs_sc": 0.7532,
+      "total_area": 305121.0,
+      "bbox_ok": true
+    },
+    "乡": {
+      "provenance": "MasterDirect",
+      "passed": true,
+      "on_curve_nodes": 94,
+      "node_cap": 174,
+      "mid_stem_nodes": 0,
+      "iou_vs_sc": 0.6514,
+      "total_area": 333338.9,
+      "bbox_ok": true
+    },
+    "卫": {
+      "provenance": "MasterDirect",
+      "passed": true,
+      "on_curve_nodes": 81,
+      "node_cap": 174,
+      "mid_stem_nodes": 0,
+      "iou_vs_sc": 0.7787,
+      "total_area": 299186.1,
+      "bbox_ok": true
+    },
+    "专": {
+      "provenance": "MasterDirect",
+      "passed": true,
+      "on_curve_nodes": 99,
+      "node_cap": 174,
+      "mid_stem_nodes": 0,
+      "iou_vs_sc": 0.7644,
+      "total_area": 310074.1,
+      "bbox_ok": true
+    },
+    "书": {
+      "provenance": "MasterDirect",
+      "passed": true,
+      "on_curve_nodes": 87,
+      "node_cap": 174,
+      "mid_stem_nodes": 0,
+      "iou_vs_sc": 0.7797,
+      "total_area": 326185.1,
+      "bbox_ok": true
+    },
+    "东": {
+      "provenance": "MasterDirect",
+      "passed": true,
+      "on_curve_nodes": 125,
+      "node_cap": 174,
+      "mid_stem_nodes": 0,
+      "iou_vs_sc": 0.7811,
+      "total_area": 335013.9,
+      "bbox_ok": true
+    },
+    "言": {
+      "provenance": "Tier0_TopDotSwap(言)",
+      "passed": true,
+      "on_curve_nodes": 111,
+      "node_cap": 174,
+      "mid_stem_nodes": 1,
+      "iou_vs_sc": 0.5973,
+      "total_area": 302138.3,
+      "bbox_ok": true
+    },
+    "直": {
+      "provenance": "MasterDirect",
+      "passed": true,
+      "on_curve_nodes": 94,
+      "node_cap": 174,
+      "mid_stem_nodes": 0,
+      "iou_vs_sc": 0.6724,
+      "total_area": 405112.0,
+      "bbox_ok": true
+    },
+    "令": {
+      "provenance": "MasterDirect",
+      "passed": true,
+      "on_curve_nodes": 115,
+      "node_cap": 174,
+      "mid_stem_nodes": 0,
+      "iou_vs_sc": 0.7552,
+      "total_area": 299373.0,
+      "bbox_ok": true
+    },
+    "骨": {
+      "provenance": "MasterDirect",
+      "passed": true,
+      "on_curve_nodes": 132,
+      "node_cap": 240,
+      "mid_stem_nodes": 0,
+      "iou_vs_sc": 0.7281,
+      "total_area": 422280.3,
+      "bbox_ok": true
+    },
+    "微": {
+      "provenance": "MasterDirect",
+      "passed": true,
+      "on_curve_nodes": 176,
+      "node_cap": 240,
+      "mid_stem_nodes": 0,
+      "iou_vs_sc": 0.7985,
+      "total_area": 467053.4,
+      "bbox_ok": true
+    },
+    "道": {
+      "provenance": "Tier0_IDS(道)",
+      "passed": true,
+      "on_curve_nodes": 133,
+      "node_cap": 240,
+      "mid_stem_nodes": 2,
+      "iou_vs_sc": 0.7756,
+      "total_area": 445638.4,
+      "bbox_ok": true
+    }
+  }
+}

@@ -83,20 +83,20 @@ def render_minor_kept_preview(
 
 
 def render_tg8105_showcase(otf_path: Path, out_png: Path) -> None:
-    im = Image.new("RGB", (1660, 680), (252, 252, 250))
+    im = Image.new("RGB", (1760, 680), (252, 252, 250))
     d = ImageDraw.Draw(im)
-    f_title = ImageFont.truetype(str(otf_path), 64)
-    f_sub = ImageFont.truetype(str(otf_path), 40)
+    f_title = ImageFont.truetype(str(otf_path), 52)
+    f_sub = ImageFont.truetype(str(otf_path), 38)
     f_body = ImageFont.truetype(str(otf_path), 34)
 
-    d.text((40, 32), "《通用规范汉字表》8,105 字全集 —— CnS v2.0 原生矢量版", fill=(18, 18, 22), font=f_title)
-    d.text((40, 128), "原生 CFF 部件变形拼装 · 原厂单笔画基元焊接 · 零中段冗余节点", fill=(35, 35, 42), font=f_sub)
+    d.text((40, 36), "《通用规范汉字表》8,105 字全集 —— CnS v2.0 原生矢量版", fill=(18, 18, 22), font=f_title)
+    d.text((40, 124), "原生 CFF 部件变形拼装 · 原厂单笔画基元焊接 · 零中段冗余节点", fill=(35, 35, 42), font=f_sub)
     lines = [
         "【合体标杆与形声】红绸语录 · 银河铁道 · 饭香四溢 · 轻车熟路 · 见微知著 · 龙马精神",
         "【独体攻坚实测】伞 (4F1E) · 丌 (4E0C) · 习习清风 · 乡音无改 · 保家卫国 · 专心致志 · 书东",
         "【陆标异形手术】言之有理 · 直截了当 · 令行禁止 · 脱胎换骨 · 微风细雨 · 道法自然 · 海神社",
         "【一级高频与通规】亏损归来 · 搬迁达标 · 关山飞越 · 异彩纷呈 · 运输业务 · 严冬买书 · 乌鸦",
-        "【三级姓名科技字】镕基 · 喆学 · 淼淼 · 龑 · 頔 · 翀 · 骉 · 犇 | TG-8105 Coverage: 100.00%",
+        "【三级姓名科技字】镕基 · 喆学 · 淼淼 · 曌 · 赟 · 翀 · 骉 · 犇 | TG-8105 Coverage: 100.00%",
     ]
     for idx, line in enumerate(lines):
         d.text((40, 212 + idx * 82), line, fill=(24, 24, 28), font=f_body)
@@ -155,9 +155,13 @@ def main() -> None:
     sdf_synth = ZHSDFSynthesizer(args.ckpt_path, serif_sc=serif_sc, sans_sc=sans_sc)
 
     targets = cls_res.missing_4101 + cls_res.diff_replace
+    targets_set = set(targets)
+    extra_masters = [c for c in bank.master_full if c not in targets_set]
+    targets.extend(extra_masters)
     print(
         f"[TG8105] Total targets: {len(targets)} (missing={len(cls_res.missing_4101)} + "
-        f"JP!=SC replace={len(cls_res.diff_replace)}) | Kept original: {len(cls_res.same_1381) + len(cls_res.diff_minor_kept)}",
+        f"JP!=SC replace={len(cls_res.diff_replace)} + extra_masters={len(extra_masters)}) | "
+        f"Kept original: {len(cls_res.same_1381) + len(cls_res.diff_minor_kept)}",
         flush=True,
     )
 
@@ -231,7 +235,12 @@ def main() -> None:
 
     if tier3_queue:
         print(f"[TG8105] Synthesizing {len(tier3_queue)} remaining glyphs via Tier 3 Hessian-SDF + §4.2 cleaner...", flush=True)
-        fb_map = sdf_synth.synthesize_batch(tier3_queue, batch_size=32, upsample_factor=3)
+        fb_map = sdf_synth.synthesize_batch(
+            tier3_queue,
+            batch_size=32,
+            upsample_factor=3,
+            cache_path=ROOT / "datasets" / "v2_tier3_cmds.json",
+        )
         for ch, cmds in fb_map.items():
             _, ref_sc = sans_sc.get_gid_and_cmds(ch, "zh-Hans")
             ok3, qa3 = check_glyph_qa_v2(cmds, ref_sc, stats, is_synthesized=True)
