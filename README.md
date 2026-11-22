@@ -1,49 +1,49 @@
 # CnS-
 
-基于 [`FOT-SkipPro-B.OTF`](./FOT-SkipPro-B.OTF) 既有 **7,912 个原版汉字**，仅以思源宋体 / 思源黑体（通过 `uharfbuzz` 强制 `language="zh-Hans"` 提取 1000-UPEM 原生轮廓）为结构参考，通过**原生 CFF 部件变形拼装 + 增量岛屿手术 + 图元感知曲线优化（零中段波浪节点）+ HarfBuzz 海森直线正则局部距离场**，将字库完整扩展并陆标化至 **《通用规范汉字表》全部 8,105 字（100.00% 覆盖）**。
+基于 [`FOT-SkipPro-B.OTF`](./FOT-SkipPro-B.OTF) 既有 **7,912 个原版汉字**，以 **v3.0 去皮轻骨架 + 结构优先门控 + 微差异保留 + 双独立字库分卷输出** 方案（详见 [`Plan3.0.md`](./Plan3.0.md)），在零使用思源宋体与中粗黑体轮廓的前提下，通过 **`Noto Sans CJK Light (wght=300)`**、均匀骨架距离场、双倍角切向场、Stage 0a/0b 局部手术与局部重绘、曲率掩膜曲线优化以及硬拦截门控（`StructuralGateV3`），面向 **《通用规范汉字表》8,105 全集** 完成独立分卷重构与原厂字形保护。
 
 ---
 
-## v2.0 核心成果与下载
+## v3.0 核心成果与下载
 
-### 1. 完整简体补全与陆标化字库
-- 🔤 **[`outputs/CnS-SkipPro-B-TG8105-SC.otf`](./outputs/CnS-SkipPro-B-TG8105-SC.otf)**（约 `9.0 MB`，经 `cffsubr` 子程序压缩）
-  - **《通用规范汉字表》全集覆盖**：**`8,105 / 8,105`（`100.00%`）**（一级 `3,500/3,500`、二级 `3,000/3,000`、三级 `1,605/1,605`，另含母件字库独立偏旁与独体增补字）
-  - **合成与陆标异形路由统计**（共处理 `6,323` 字，原版保留 `1,799` 字）：
-    - `Tier 0` 增量岛屿/IDS 手术（保留未变原厂轮廓，仅替换 `言/道/海/神/社` 等陆标差异部首）：`287` 字（`Tier0_IDS: 250`、`Tier0_TopDotSwap: 25`、`Tier0_DotSwap: 12`）
-    - `Tier 1` 递归 IDS 原生矢量部件拼装：`1,192` 字
-    - `MasterDirect` 母件直通：`99` 字
-    - `Tier 3` 陆标海森距离场 + 原生 CFF 曲线优化：`4,745` 字
-  - **轮廓质量**：全部合成字形**直线中段冗余波浪节点 = `0`**（`mid_stem_violation_count: 0`），QA v2 通过率 **`99.67%`**，中位 on-curve 节点数 **`150`**（与原厂 `FOT-SkipPro-B` 中位 `154` 高度一致），完整保留原厂全部假名、西文、标点、直排度量与 OpenType 特性。
+> **双独立字库输出（默认互不相交、不污染原厂）**：  
+> - **缺字补全独立字库**：[`outputs/CnS-SkipPro-B-v3-Missing.otf`](./outputs/CnS-SkipPro-B-v3-Missing.otf)（约 `2.2 MB`，仅包含 `.notdef` 与原字体缺失的 **`4,088`** 个简体/增补字形，`cmap ∩ FOT-SkipPro-B == ∅`）  
+> - **陆标异形重绘独立字库**：[`outputs/CnS-SkipPro-B-v3-SCVariants.otf`](./outputs/CnS-SkipPro-B-v3-SCVariants.otf)（约 `784 KB`，仅包含 `.notdef` 与非豁免日/陆异形的 **`1,183`** 个重绘字形，`cmap ⊆ FOT-SkipPro-B`）
 
-![TG-8105 混排与攻坚样张](./outputs/v2_tg8105_showcase.png)
+### 1. v3.0 实测对比样张
 
-### 2. 待人工精修核心母件字库（修改一处自动传播全库）
-- ✏️ **[`manual_review/CnS-Manual-Master-Bank.otf`](./manual_review/CnS-Manual-Master-Bank.otf)**（仅收录 **116 个** 高复用偏旁、独体根字与中日差异原字，可用 **FontCreator / FontLab / Glyphs / FontForge** 直接打开快速精修）
-- 📖 详细字段分组与节点预览请参阅：[`manual_review/MANUAL_EDIT_GUIDE.md`](./manual_review/MANUAL_EDIT_GUIDE.md) 与 [`manual_review/master_bank_wireframe.png`](./manual_review/master_bank_wireframe.png)
-- 重点包含：
-  - **12 个高频偏旁母件**：`讠钅纟饣辶亠礻衤忄艹冫阝`
-  - **74 个独体与简体根字**：含 `伞 (4F1E)`、`丌 (4E0C)`、`习 (4E60)`、`乡 (4E61)`、`卫 (536B)`、`专 (4E13)`、`书 (4E66)`、`东 (4E1C)` 等
-  - **30 个中日字形差异原字**：含 `言 (8A00)`、`直 (76F4)`、`令 (4EE4)`、`骨 (9AA8)`、`微 (5FAE)`、`道 (9053)`、`海`、`神`、`社` 等
+![CnS v3.0 vs v2.0 实测对比](./outputs/v3_vs_v2_showcase.png)
 
-编辑保存 `manual_review/CnS-Manual-Master-Bank.otf`（**保持每个字的 Unicode 码位不变**）后，只需执行一条命令即可将你人工修改的母件自动传播回全套 **8,105** 字并重新打包：
+### 2. M0 ～ M4 关键定量指标
+
+- **M0 结构优先门控回归测试**（[`outputs/v3_m0_gate_regression.json`](./outputs/v3_m0_gate_regression.json)）：
+  - 正样本（`1,000` 个 `JP==SC` `SkipPro-B` 原字）：**`973 / 1000`（`97.30%`）**
+  - `NEG1`（`300` 个日标异形冒充陆标）：**`0 / 300`（`0.00%`）**
+  - `NEG2`（形近错字替换 `真↔直, 徽↔微, ...`）：**`0 / 11`（`0.00%`）**
+  - `NEG3`（繁体冒充简体 `紅→红, 銀→银, ...`）：**`0 / 20`（`0.00%`）**
+  - `NEG4`（`300` 个随机错字）：**`0 / 300`（`0.00%`）**
+- **M1 通规 8,105 字分类与原厂保留**（[`outputs/v3_m1_classification.json`](./outputs/v3_m1_classification.json) & [`manual_review/v3_keep_vs_replace.png`](./manual_review/v3_keep_vs_replace.png)）：
+  - `MISSING`（原字库缺字）：**`4,101`** 字
+  - `SC_VARIANT`（非豁免陆标异形）：**`1,422`** 字（较 v2 的 `2,239` 大幅收窄）
+  - 原厂保留共 **`2,582`** 字：`KEEP_POLICY` 通规内 **`8`** 字（连同非通规部首共 **12 字强锁定保留原厂**：`/uni4E10/uni4E30/uni514D/uni51AB/uni534A/uni6BCF/uni793B/uni793E/uni795E/uni8279/uni8863/uni8864`）、`KEEP_SAME_GID` **`1,453`** 字、`KEEP_V1_V2` 微差异豁免 **`395`** 字（含「竖弯钩 ↔ 竖+提」及 `ネ ↔ 礻`）、`KEEP_SKIPPRO_ALREADY_SC` 原字已吻合陆标 **`726`** 字
+- **M2 `Noto Sans Light` 去皮可控消融（80 严格保留字）**（[`outputs/v3_m2_ablation_report.json`](./outputs/v3_m2_ablation_report.json)）：
+  - 风格泄露率单调下降：`Group B Sans Light (6ep): 1.1927` → `Group C +均匀骨架 (6ep): 1.1731` → `Group D +切向+抖动 (6ep): 1.1662` → **`Group D 最终 18ep: 1.1080`**（低于 `Group A v2 基线: 1.1382`）
+  - 4 个无参考监督损失在 18 轮内全部真实下降（`sdf_l1 -19.62%`、`grad_l1 -18.33%`、`stem_norm -24.50%`、`cldice -27.94%`）
+- **M3 精简 104 字人工精修母件字库**（[`manual_review/CnS-Manual-Master-Bank.otf`](./manual_review/CnS-Manual-Master-Bank.otf)）：
+  - 已严格移除全部 **12 个强锁定保留原厂字形的码位**（`116 → 104` 字），`gate_pass_count = 103 / 104 (99.04%)`，支持直接使用 FontCreator / FontLab 编辑（见 [`manual_review/MANUAL_EDIT_GUIDE.md`](./manual_review/MANUAL_EDIT_GUIDE.md) 与 [`manual_review/master_bank_wireframe.png`](./manual_review/master_bank_wireframe.png)）
+- **M4 分卷输出与合并覆盖统计**（[`outputs/v3_metrics.json`](./outputs/v3_metrics.json)）：
+  - `Missing.otf` 打包 **`4,088 / 4,106`（`99.56%`）**：`MasterDirect 81 + Tier1 1,739 + Tier3_DeskinnedSDF 2,268`
+  - `SCVariants.otf` 打包 **`1,183` 字**：其中 `Tier 0` 原厂局部手术 / 局部重绘 **`1,073` 字（占已入库异形字 `90.70%`，占全部目标 `75.46%`）**，`Tier1 38`、`Tier3_DeskinnedSDF 72`
+  - 联合原版 `FOT-SkipPro-B.OTF` 后通规 8,105 字实测覆盖 **`8,087 / 8,105`（`99.78%`）**，总门控通过率 **`95.35%`**；全部 **`257`** 个未过门控拦截字形已阻止污染输出，统一隔离在 [`manual_review/v3_needs_review.otf`](./manual_review/v3_needs_review.otf) 与 [`manual_review/v3_needs_review.json`](./manual_review/v3_needs_review.json)
+  - 全部硬不变量实测为 `true`：`missing_disjoint_variants`、`missing_disjoint_base`、`variants_subset_base`、`hard_keep_12_point_exact`、`master_bank_glyph_count = 104`
+
+### 3. 可选合并工具
+
+v3.0 默认严格分卷输出 `Missing.otf` 与 `SCVariants.otf`。若下游软件需要单一字体，可通过可选工具显式合并（并自动校验上述 12 个码位与原厂点对点完全一致）：
 
 ```bash
-python scripts/v2_build_tg8105.py \
-  --noto_serif /path/to/NotoSerifCJK-VF.ttc \
-  --noto_sans /path/to/NotoSansCJK-VF.ttc \
-  --master_otf manual_review/CnS-Manual-Master-Bank.otf
+python scripts/v3_merge_fonts.py --emit_merged
 ```
-
----
-
-## M2 定点节点级对照实测（Orig vs v1 vs v2.0）
-
-![M2 节点 Wireframe 对比](./outputs/v2_m2_node_wireframes.png)
-
-- **合体字形声组**（`红 / 语 / 银 / 饭`）：`红` 右部 `工` 与 `语` 右部 `吾` 直接复刻原厂 `FOT-SkipPro-B` 矢量节点（零波浪），`红` 轮廓与思源黑陆标参考 `IoU = 0.7729`、`mid_stem_nodes = 0`。
-- **独体字攻坚组**（`伞 / 丌 / 习 / 乡 / 卫 / 专 / 书 / 东`）：全组 `mid_stem_nodes = 0`（如 `伞` 仅 `57` 节点、`丌` 仅 `22` 节点、`卫` 由 v1 的 `93` 节点/波浪降至 `81` 节点直边，`书/东` 与参考 `IoU` 达 `0.78`）。
-- **中日异形修正组**（`言 / 直 / 令 / 骨 / 微 / 道`）：彻底解决 v1 时期 Windows Pillow 缺少 `raqm` 导致的日标回退问题，`言/道` 保留原厂未变部件仅替换陆标点与单点走之底，`直/令/骨/微` 全部转换为标准陆标字形且 `mid_stem_nodes = 0`。
 
 ---
 
@@ -51,58 +51,73 @@ python scripts/v2_build_tg8105.py \
 
 ```text
 CnS-/
-├── FOT-SkipPro-B.OTF                          # 基底字体 (1000 UPEM, CFF, 7,912 CJK)
-├── plan2.0.md                                 # v2.0 架构设计、实测调研与审计文档
-├── PLAN.md                                    # v1.0 方案归档
+├── FOT-SkipPro-B.OTF                          # 基底原厂字体 (1000 UPEM, CFF, 7,912 CJK)
+├── Plan3.0.md                                 # v3.0 审计与优化设计方案
+├── data_v3/
+│   └── variant_policy.tsv                     # 变体保留/替换策略表（强锁定 12 个 KEEP 码位）
 ├── data_v2/tg8105/                            # 《通用规范汉字表》一/二/三级字表 (3,500+3,000+1,605)
-├── manual_review/
-│   ├── CnS-Manual-Master-Bank.otf             # 待人工精修核心母件字库 (116 字，改完可全库传播)
-│   ├── MANUAL_EDIT_GUIDE.md                   # 母件分组与精修指南
-│   ├── master_bank_wireframe.png              # 116 母件控制点 Wireframe 预览
-│   ├── master_bank_hashes.json                # 人工改动自动检测指纹表
-│   └── jp_sc_minor_kept_sample.png            # 微差原字保留原厂轮廓抽样对照
-├── src/v2/
-│   ├── hb_outlines.py                         # HarfBuzz (`zh-Hans`/`ja`) 无平台依赖 1000-UPEM 矢量提取
-│   ├── component_bank.py                      # IDS 递归部件库、笔画补偿缩放与 Tier0 增量手术
-│   ├── curve_optimizer.py                     # Skia boolean union、绕序修复与零中段冗余节点优化器
-│   ├── stroke_assembler.py                    # 原厂单笔画焊接器与 cffsubr 打包器
-│   ├── stats_and_qa.py                        # SkipPro 实测几何标定与 QA v2.0 门禁
-│   └── zh_sdf_fallback.py                     # 海森直线正则 LocalStrokeSDFNet 与矢量化缓存引擎
+├── src/v3/
+│   ├── hb_light.py                            # Noto Sans Light (`wght=300`) 提取、均匀骨架与切向场
+│   ├── structural_gate.py                     # StructuralGateV3（零思源衬线依赖、零直线奖励 Hack）
+│   ├── variant_classifier.py                  # V1/V2 微差异豁免、原厂已达标直留与全表分类
+│   ├── model_v3.py                            # LocalStrokeSDFNetV3 去皮轻骨架 SDF 生成器
+│   ├── losses_v3.py                           # 目标独占几何/法向监督、Soft-clDice 与死锁监测器
+│   ├── curve_constrain.py                     # 曲率掩膜保护 (`no_snap_mask`) + Hausdorff<=4u 回退守卫
+│   ├── local_inpainter.py                     # DonorBankV3、Stage 0a 纯矢量手术与 Stage 0b 局部 SDF 重绘
+│   └── otf_packager.py                        # 独立分卷 OpenType CFF 打包器 (`cffsubr`)
 ├── scripts/
-│   ├── v2_build_master_bank.py                # 训练/加载 v2 模型并导出 CnS-Manual-Master-Bank.otf
-│   ├── v2_run_m2_benchmark.py                 # 运行 18 字节点级对照测试并导出 wireframe 图
-│   └── v2_build_tg8105.py                     # 读取 Master Bank，构建并验证全量 8,105 字 OTF
+│   ├── v3_gate_regression.py                  # M0 结构优先门控 5 组回归基准测试
+│   ├── v3_classify_and_preview.py             # M1 通规全表分类与 KEEP/REPLACE 三联对比图
+│   ├── v3_train_and_ablate.py                 # M2 Light 缓存、4 组消融实验与 18 轮正式训练
+│   ├── v3_build_master_bank.py                # M3 构建 104 字精简母件库
+│   ├── v3_build_tg8105.py                     # M4 全库合成、门控拦截与双独立 OTF 打包
+│   └── v3_merge_fonts.py                      # 可选：合并双独立字体并执行 12 字点对点校验
 ├── checkpoints/
-│   ├── v2_zh_sdf_s256.pt                      # v2.0 HarfBuzz 海森直线正则生成器权重
-│   └── cns_local_sdf_s256_c64.pt              # [Legacy v1] 历史权重
+│   ├── v3_zh_sdf_light.pt                     # [v3.0] 18 轮去皮轻骨架局部生成器权重
+│   └── v2_zh_sdf_s256.pt                      # [v2.0] 历史对照权重
+├── manual_review/
+│   ├── CnS-Manual-Master-Bank.otf             # [v3.0] 104 字精简人工精修母件库（已剔除 12 保留字）
+│   ├── MANUAL_EDIT_GUIDE.md                   # v3.0 母件编辑与下游传播指南
+│   ├── master_bank_wireframe.png              # 104 母件控制点 Wireframe 预览
+│   ├── master_bank_hashes.json                # 改动指纹、来源与门控记录
+│   ├── v3_keep_vs_replace.png                 # KEEP_POLICY / V1-V2 / ALREADY_SC / SC_VARIANT 对照图
+│   └── v3_needs_review.otf/.json              # 未通过 StructuralGateV3 拦截待审字形与诊断日志
 └── outputs/
-    ├── CnS-SkipPro-B-TG8105-SC.otf            # [v2.0] 8,105 通规全集 + 陆标化成品字体
-    ├── v2_tg8105_showcase.png                 # [v2.0] 样张展示
-    ├── v2_tg8105_metrics.json                 # [v2.0] 全库构建指标报告
-    ├── v2_m2_node_wireframes.png              # [v2.0] Orig / v1 / v2 三行节点对比图
-    └── CnS-SkipPro-B-GB2312-SC.otf            # [Legacy v1] 早期 GB2312 测试产物
+    ├── CnS-SkipPro-B-v3-Missing.otf           # [v3.0] 缺字补全独立字库 (4,088 字 + .notdef)
+    ├── CnS-SkipPro-B-v3-SCVariants.otf        # [v3.0] 陆标异形重绘独立字库 (1,183 字 + .notdef)
+    ├── v3_vs_v2_showcase.png                  # [v3.0] 问题 1/2/3 优化实测对比图
+    ├── v3_metrics.json                        # [v3.0] M4 全库指标与硬不变量校验报告
+    ├── v3_glyph_manifest.json                 # [v3.0] 逐字合成来源、节点与门控明细
+    ├── v3_m0_gate_regression.json             # [v3.0] M0 门控回归测试报告
+    ├── v3_m1_classification.json              # [v3.0] M1 8,105 字分类汇总
+    ├── v3_m2_ablation_report.json             # [v3.0] M2 四组消融与 18 轮收敛报告
+    └── CnS-SkipPro-B-TG8105-SC.otf            # [v2.0] 早期单包合集对照产物
 ```
 
-### 从头完整复现 v2.0 流程
+### 从头完整复现 v3.0 流程
 
 ```bash
 pip install -r requirements.txt
 
-# 1. 训练 HarfBuzz 海森直线正则模型并导出 116 字可精修母件字库
-python scripts/v2_build_master_bank.py \
-  --noto_serif /path/to/NotoSerifCJK-VF.ttc \
+# M0: 验证结构优先门控 (POS >= 97%, NEG1..4 == 0%)
+python scripts/v3_gate_regression.py --noto_sans /path/to/NotoSansCJK-VF.ttc
+
+# M1: 通规 8,105 字分类与保留策略检查
+python scripts/v3_classify_and_preview.py --noto_sans /path/to/NotoSansCJK-VF.ttc
+
+# M2: 构建去皮 Sans Light 缓存、运行 A/B/C/D 消融并训练 18 轮 Group D 模型
+python scripts/v3_train_and_ablate.py \
   --noto_sans /path/to/NotoSansCJK-VF.ttc \
-  --epochs 16
-
-# 2. 运行 M2 节点对比测试
-python scripts/v2_run_m2_benchmark.py \
   --noto_serif /path/to/NotoSerifCJK-VF.ttc \
-  --noto_sans /path/to/NotoSansCJK-VF.ttc
+  --ablation_epochs 6 --full_epochs 18
 
-# 3. 合成并打包《通用规范汉字表》8,105 全集字体
-python scripts/v2_build_tg8105.py \
-  --noto_serif /path/to/NotoSerifCJK-VF.ttc \
-  --noto_sans /path/to/NotoSansCJK-VF.ttc
+# M3: 构建 104 字精简人工精修母件库（已移除 12 个 KEEP 码位）
+python scripts/v3_build_master_bank.py --noto_sans /path/to/NotoSansCJK-VF.ttc
+
+# M4: 输出双独立字库（Missing.otf + SCVariants.otf）并验证全套硬不变量
+python scripts/v3_build_tg8105.py --noto_sans /path/to/NotoSansCJK-VF.ttc
 ```
 
-> **Legacy v1 说明**：旧版脚本 [`scripts/train_gpu_5070ti.py`](./scripts/train_gpu_5070ti.py) 与 [`scripts/generate_simplified_font.py`](./scripts/generate_simplified_font.py) 已被 `src/v2/` 与 `scripts/v2_*.py` 取代——v2.0 完全移除了 Windows 下缺少 `raqm` 导致的日标静态 `cmap` 回退问题，并消除了 `PatchGAN` 引起的直边曲线波浪。
+---
+
+> **v2.0 / v1.0 历史归档**：早期单包合集脚本与文档仍保留于 `src/v2/`、`scripts/v2_*.py`、`plan2.0.md` 与 `PLAN.md` 供对照评测。

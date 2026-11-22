@@ -13,5 +13,6 @@ data_v2/mmh_*.txt
 outputs/CnS-SkipPro-B-M1-PoC.otf
 outputs/m1_*
 outputs/*.log
+*.log
 outputs/*outliers.json
 checkpoints/m1_*

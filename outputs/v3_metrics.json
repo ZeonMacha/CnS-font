@@ -1,0 +1,44 @@
+{
+  "elapsed_sec": 2220.0,
+  "tonggui_total": 8105,
+  "missing_targets": 4106,
+  "missing_packed": 4088,
+  "variant_targets": 1422,
+  "variants_packed": 1183,
+  "blocked_to_review": 257,
+  "gate_pass_rate": 0.9535,
+  "sc_variant_tier0_share": 0.7546,
+  "tier_breakdown_missing": {
+    "MasterDirect": 81,
+    "Tier1": 1739,
+    "Tier3_DeskinnedSDF": 2268
+  },
+  "tier_breakdown_variants": {
+    "Tier0_LocalInpaint": 892,
+    "Tier0_ZouInnerNative": 22,
+    "Tier0_IDS": 20,
+    "Tier0_RegionInpaint": 111,
+    "Tier0_DotSwap": 2,
+    "Tier0_WideLocalInpaint": 21,
+    "Tier0_IslandInpaint": 5,
+    "Tier1": 38,
+    "Tier3_DeskinnedSDF": 72
+  },
+  "keep_policy_12_tg": 8,
+  "keep_same_gid": 1453,
+  "keep_v1_v2_exempt": 395,
+  "keep_already_sc": 726,
+  "merged_tg_coverage_by_level": {
+    "1": 3498,
+    "2": 2994,
+    "3": 1595
+  },
+  "merged_tg_total_covered": 8087,
+  "invariants": {
+    "missing_disjoint_variants": true,
+    "missing_disjoint_base": true,
+    "variants_subset_base": true,
+    "hard_keep_12_point_exact": true,
+    "master_bank_glyph_count": 104
+  }
+}

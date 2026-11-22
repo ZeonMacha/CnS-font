@@ -1,8 +1,13 @@
 {
-  "master_glyphs_packed": 116,
-  "tier0_delta_surgery": 5,
-  "tier2_atomic_native": 2,
-  "tier3_hessian_sdf": 98,
-  "zero_mid_stem_rate": 0.931,
-  "median_on_curve_nodes": 103
+  "master_glyphs_packed": 104,
+  "excluded_hard_keep_12": 12,
+  "tier0_native": 8,
+  "tier0_local_rewrite": 13,
+  "tier1_ids": 10,
+  "tier2_atomic": 0,
+  "tier3_deskinned_sdf": 73,
+  "gate_pass_count": 103,
+  "gate_pass_rate": 0.9904,
+  "zero_mid_stem_rate": 0.7692,
+  "median_on_curve_nodes": 137
 }
