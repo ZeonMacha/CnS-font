@@ -29,7 +29,8 @@
 ```text
 CnS-/
 ├── FOT-SkipPro-B.OTF                  # 基底字体 (1000 UPEM, CFF, 7,912 CJK)
-├── PLAN.md                            # 完整技术方案与模型选型复盘文档
+├── PLAN.md                            # v1.0 局部感受野 SDF 方案与验证复盘
+├── plan2.0.md                         # v2.0 原生矢量优先与通规 8,105 字升级方案
 ├── src/
 │   ├── glyph_renderer.py              # 1000-UPEM 左基线像素级对齐渲染器
 │   ├── sdf_utils.py                   # 超采样亚像素 SDF 与四通道互补张量构建
@@ -79,4 +80,5 @@ python scripts/train_gpu_5070ti.py \
 
 ## 技术方案与实验复盘文档
 
-详见 📄 **[《CnS- 简中字符集扩充与风格迁移技术方案》（`PLAN.md`）](./PLAN.md)**。
+- 📄 **[v2.0 升级方案：《原生矢量优先与几何笔理约束架构（通规 8,105 全集 + 陆标化）》（`plan2.0.md`）](./plan2.0.md)**
+- 📄 **[v1.0 技术方案：《局部感受野 SDF 风格迁移方案》（`PLAN.md`）](./PLAN.md)**
