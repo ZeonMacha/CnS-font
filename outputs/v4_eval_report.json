@@ -1,0 +1,122 @@
+{
+  "n_eval": 14,
+  "sdf_l1_mean": 0.0736,
+  "iou_mean": 0.8227,
+  "skeleton_chamfer_mean": 9.2486,
+  "contour_hausdorff_mean": 126.6271,
+  "leak_ratio_mean": null,
+  "per_char": [
+    {
+      "char": "志",
+      "sdf_l1": 0.0618,
+      "iou": 0.8583,
+      "skeleton_chamfer": 7.66,
+      "contour_hausdorff": 79.66,
+      "leak_ratio": null
+    },
+    {
+      "char": "洳",
+      "sdf_l1": 0.071,
+      "iou": 0.8641,
+      "skeleton_chamfer": 7.01,
+      "contour_hausdorff": 164.41,
+      "leak_ratio": null
+    },
+    {
+      "char": "菜",
+      "sdf_l1": 0.0607,
+      "iou": 0.868,
+      "skeleton_chamfer": 5.83,
+      "contour_hausdorff": 77.0,
+      "leak_ratio": null
+    },
+    {
+      "char": "嘉",
+      "sdf_l1": 0.0627,
+      "iou": 0.8475,
+      "skeleton_chamfer": 7.33,
+      "contour_hausdorff": 160.08,
+      "leak_ratio": null
+    },
+    {
+      "char": "改",
+      "sdf_l1": 0.0872,
+      "iou": 0.8187,
+      "skeleton_chamfer": 10.5,
+      "contour_hausdorff": 130.13,
+      "leak_ratio": null
+    },
+    {
+      "char": "栅",
+      "sdf_l1": 0.0562,
+      "iou": 0.899,
+      "skeleton_chamfer": 5.81,
+      "contour_hausdorff": 120.78,
+      "leak_ratio": null
+    },
+    {
+      "char": "畴",
+      "sdf_l1": 0.0711,
+      "iou": 0.8389,
+      "skeleton_chamfer": 8.33,
+      "contour_hausdorff": 151.07,
+      "leak_ratio": null
+    },
+    {
+      "char": "逡",
+      "sdf_l1": 0.0829,
+      "iou": 0.7745,
+      "skeleton_chamfer": 11.29,
+      "contour_hausdorff": 90.95,
+      "leak_ratio": null
+    },
+    {
+      "char": "言",
+      "sdf_l1": 0.0935,
+      "iou": 0.6935,
+      "skeleton_chamfer": 14.95,
+      "contour_hausdorff": 135.55,
+      "leak_ratio": null
+    },
+    {
+      "char": "直",
+      "sdf_l1": 0.083,
+      "iou": 0.7968,
+      "skeleton_chamfer": 10.8,
+      "contour_hausdorff": 160.5,
+      "leak_ratio": null
+    },
+    {
+      "char": "令",
+      "sdf_l1": 0.079,
+      "iou": 0.7914,
+      "skeleton_chamfer": 10.78,
+      "contour_hausdorff": 121.11,
+      "leak_ratio": null
+    },
+    {
+      "char": "骨",
+      "sdf_l1": 0.0794,
+      "iou": 0.8315,
+      "skeleton_chamfer": 10.1,
+      "contour_hausdorff": 145.37,
+      "leak_ratio": null
+    },
+    {
+      "char": "微",
+      "sdf_l1": 0.0754,
+      "iou": 0.8053,
+      "skeleton_chamfer": 10.24,
+      "contour_hausdorff": 101.36,
+      "leak_ratio": null
+    },
+    {
+      "char": "道",
+      "sdf_l1": 0.0668,
+      "iou": 0.83,
+      "skeleton_chamfer": 8.85,
+      "contour_hausdorff": 134.81,
+      "leak_ratio": null
+    }
+  ]
+}

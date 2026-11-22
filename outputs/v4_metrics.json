@@ -1,0 +1,23 @@
+{
+  "elapsed_sec": 699.7,
+  "tonggui_total": 8105,
+  "missing_targets": 4101,
+  "missing_packed": 4100,
+  "variant_targets": 0,
+  "variants_packed": 0,
+  "blocked_to_review": 1,
+  "gate_pass_rate": 0.9998,
+  "sc_variant_tier0_share": 0.0,
+  "tier_breakdown_missing": {
+    "Tier2_Atomic": 1,
+    "Tier3_GlobalSDF": 4099
+  },
+  "tier_breakdown_variants": {},
+  "model": "GlobalGlyphTransformer d=768 L=4 H=12",
+  "invariants": {
+    "missing_disjoint_variants": true,
+    "missing_disjoint_base": true,
+    "variants_subset_base": true,
+    "hard_keep_12_point_exact": true
+  }
+}

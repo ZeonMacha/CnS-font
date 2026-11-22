@@ -201,6 +201,13 @@ class HBOutlineExtractor:
             self._cache[key] = (gid, cmds)
         return self._cache[key]
 
+    def get_cmds(self, char: str, unioned: bool = True, language: str = "zh-Hans") -> List[DrawCmd]:
+        """Convenience wrapper: return raw or unioned DrawCmd list for a character."""
+        if unioned:
+            return self.get_unioned_cmds(char, language)
+        else:
+            return self.get_gid_and_cmds(char, language)[1]
+
 
 class SkipProOutlineExtractor:
     """Direct 1000-UPEM CFF outline reader for FOT-SkipPro-B.OTF (or Master Bank OTF)."""
