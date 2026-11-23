@@ -89,6 +89,7 @@ def main():
     parser.add_argument("--noto_weight", type=int, default=None, help="Variable font wght axis (None for static TTC)")
     parser.add_argument("--version_tag", type=str, default="v4", help="Output filename tag (e.g. v4 or v41)")
     parser.add_argument("--allow_empty_ids", action="store_true", help="Allow running without full cjkvi-ids ids.txt")
+    parser.add_argument("--use_legacy_v3_tiers", action="store_true", help="Enable legacy v3 MasterDirect & Tier1 splicing (not recommended for v4.1)")
     args = parser.parse_args()
 
     t0 = time.time()
@@ -124,9 +125,11 @@ def main():
     bank.build_from_skippro()
 
     master_cmds_map, edited_masters, master_prov, master_gate_ok = _load_master_state(args.master_otf)
-    if args.master_otf.exists():
+    if args.use_legacy_v3_tiers and args.master_otf.exists():
         n_m = bank.load_master_otf(args.master_otf, edited_chars=edited_masters)
-        print(f"[v4-Build] Loaded {n_m} Master Bank glyphs", flush=True)
+        print(f"[v4-Build] Loaded {n_m} legacy Master Bank glyphs", flush=True)
+    else:
+        print(f"[v4-Build] Pure v4 mode: skipping un-edited v3 Master Bank (edited_masters={len(edited_masters)})", flush=True)
 
     atomic_asm = AtomicStrokeAssemblerV3(skip_ext, sn_sc, sc_variant_set, h_half, v_half)
     synth = ZHSDFSynthesizerV4(
@@ -146,7 +149,8 @@ def main():
     # Disjoint target sets
     seen_m: Set[str] = set()
     missing_targets: List[str] = []
-    for ch in cls_res.missing + sorted(c for c in master_cmds_map if not skip_ext.has_char(c)):
+    extra_m = sorted(c for c in (master_cmds_map if args.use_legacy_v3_tiers else edited_masters) if not skip_ext.has_char(c))
+    for ch in cls_res.missing + extra_m:
         if ch not in seen_m and ch not in HARD_KEEP_CHARS:
             seen_m.add(ch)
             missing_targets.append(ch)
@@ -207,7 +211,7 @@ def main():
         if ch in edited_masters and ch in master_cmds_map:
             _record_accept(ch, master_cmds_map[ch], "Tier0_MasterEdited", {"note": "manual_edit"}, True)
             continue
-        if ch in master_cmds_map and master_prov.get(ch, "").startswith("Tier0_") and master_prov.get(ch) != "Tier0_Native":
+        if args.use_legacy_v3_tiers and ch in master_cmds_map and master_prov.get(ch, "").startswith("Tier0_") and master_prov.get(ch) != "Tier0_Native":
             ok_m, gm_m = gate.check(master_cmds_map[ch], ch, exempt_boxes=ex_boxes)
             if ok_m:
                 _record_accept(ch, master_cmds_map[ch], master_prov[ch], gm_m, True)
@@ -222,24 +226,25 @@ def main():
         print(f"[v4-Build] Stage 0b local inpainting for {len(v_stage0b)} SCVariants...", flush=True)
         acc0b, fail0b = tier0_stage0b_local_inpaint_batch(
             v_stage0b, skip_ext, sn_jp, sn_sc, synth, gate,
-            exempt_boxes_map=cls_res.exempt_boxes_map, batch_size=8,
+            exempt_boxes_map=cls_res.exempt_boxes_map, batch_size=16,
         )
         for ch, (cmds, tag, meta) in acc0b.items():
             _record_accept(ch, cmds, tag, meta, True)
         for ch in fail0b:
-            r1 = compose_from_ids_v3(ch, bank, sn_sc)
-            if r1 is not None:
-                ok1, gm1 = gate.check(r1[0], ch, exempt_boxes=cls_res.exempt_boxes_map.get(ch))
-                if ok1:
-                    _record_accept(ch, r1[0], r1[1], gm1, True)
-                    continue
+            if args.use_legacy_v3_tiers:
+                r1 = compose_from_ids_v3(ch, bank, sn_sc)
+                if r1 is not None:
+                    ok1, gm1 = gate.check(r1[0], ch, exempt_boxes=cls_res.exempt_boxes_map.get(ch))
+                    if ok1:
+                        _record_accept(ch, r1[0], r1[1], gm1, True)
+                        continue
             v_sdf_queue.append(ch)
 
     if v_sdf_queue:
         print(f"[v4-Build] Tier 3 Global SDF on {len(v_sdf_queue)} SCVariants...", flush=True)
         acc3v, fail3v = synth.synthesize_with_gate_retries(
             v_sdf_queue, sc_cmds_map, gate,
-            exempt_boxes_map=cls_res.exempt_boxes_map, batch_size=8,
+            exempt_boxes_map=cls_res.exempt_boxes_map, batch_size=16,
         )
         for ch, (cmds, tag, meta) in acc3v.items():
             _record_accept(ch, cmds, tag, meta, True)
@@ -248,37 +253,38 @@ def main():
 
     # --- 2. Missing ---
     m_sdf_queue: List[str] = []
-    for ch in tqdm(missing_targets, desc="Missing Tier1/2", mininterval=5):
+    for ch in tqdm(missing_targets, desc="Missing Dispatch", mininterval=5):
         ex_boxes = cls_res.exempt_boxes_map.get(ch)
         if ch in edited_masters and ch in master_cmds_map:
             _record_accept(ch, master_cmds_map[ch], "MasterEditedDirect", {"note": "manual_edit"}, False)
             continue
-        if ch in master_cmds_map and master_gate_ok.get(ch, False):
-            ok_m, gm_m = gate.check(master_cmds_map[ch], ch, exempt_boxes=ex_boxes, check_jp_diff=False)
-            if ok_m:
-                _record_accept(ch, master_cmds_map[ch], f"MasterDirect({master_prov.get(ch, '')})", gm_m, False)
-                continue
-        r1 = compose_from_ids_v3(ch, bank, sn_sc)
-        if r1 is not None:
-            ok1, gm1 = gate.check(r1[0], ch, exempt_boxes=ex_boxes, replaced_boxes=r1[2], check_jp_diff=False)
-            if ok1:
-                _record_accept(ch, r1[0], r1[1], gm1, False)
-                continue
-        r2 = atomic_asm.try_assemble_curated_atomic(ch)
-        if r2 is not None:
-            sc_c = sc_cmds_map.get(ch, [])
-            c2, opt2 = optimize_synthesized_contours_v3(r2[0], ref_sc_cmds=sc_c or None, stem_concave_sagitta=0.85)
-            ok2, gm2 = gate.check(c2, ch, exempt_boxes=ex_boxes, check_jp_diff=False)
-            if ok2:
-                _record_accept(ch, c2, "Tier2_Atomic", {**gm2, **opt2}, False)
-                continue
+        if args.use_legacy_v3_tiers:
+            if ch in master_cmds_map and master_gate_ok.get(ch, False):
+                ok_m, gm_m = gate.check(master_cmds_map[ch], ch, exempt_boxes=ex_boxes, check_jp_diff=False)
+                if ok_m:
+                    _record_accept(ch, master_cmds_map[ch], f"MasterDirect({master_prov.get(ch, '')})", gm_m, False)
+                    continue
+            r1 = compose_from_ids_v3(ch, bank, sn_sc)
+            if r1 is not None:
+                ok1, gm1 = gate.check(r1[0], ch, exempt_boxes=ex_boxes, replaced_boxes=r1[2], check_jp_diff=False)
+                if ok1:
+                    _record_accept(ch, r1[0], r1[1], gm1, False)
+                    continue
+            r2 = atomic_asm.try_assemble_curated_atomic(ch)
+            if r2 is not None:
+                sc_c = sc_cmds_map.get(ch, [])
+                c2, opt2 = optimize_synthesized_contours_v3(r2[0], ref_sc_cmds=sc_c or None, stem_concave_sagitta=0.85)
+                ok2, gm2 = gate.check(c2, ch, exempt_boxes=ex_boxes, check_jp_diff=False)
+                if ok2:
+                    _record_accept(ch, c2, "Tier2_Atomic", {**gm2, **opt2}, False)
+                    continue
         m_sdf_queue.append(ch)
 
     if m_sdf_queue:
         print(f"[v4-Build] Tier 3 Global SDF on {len(m_sdf_queue)} Missing...", flush=True)
         acc3m, fail3m = synth.synthesize_with_gate_retries(
             m_sdf_queue, sc_cmds_map, gate,
-            exempt_boxes_map=cls_res.exempt_boxes_map, batch_size=8, check_jp_diff=False,
+            exempt_boxes_map=cls_res.exempt_boxes_map, batch_size=16, check_jp_diff=False,
         )
         for ch, (cmds, tag, meta) in acc3m.items():
             _record_accept(ch, cmds, tag, meta, False)
