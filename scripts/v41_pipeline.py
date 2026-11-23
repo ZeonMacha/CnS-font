@@ -154,6 +154,37 @@ def cmd_sync(args: argparse.Namespace) -> None:
     print("[Sync Done]")
 
 
+def cmd_train(args: argparse.Namespace) -> None:
+    tag = args.tag
+    out_ckpt_rel = f"checkpoints/{tag}_zh_sdf_global.pt"
+    out_log_rel = f"outputs/{tag}_train_log.json"
+
+    print(
+        f"[Train-Scratch] -> {out_ckpt_rel} "
+        f"(S1={args.stage1_epochs}ep@{args.stage1_lr}, S2={args.stage2_epochs}ep@{args.stage2_lr}, batch={args.batch_size})"
+    )
+    remote_cmd = (
+        f"cd {REMOTE_ROOT} && set -o pipefail && PYTHONUNBUFFERED=1 "
+        f"python scripts/v4_train.py "
+        f"--noto_sans {NOTO_REMOTE} "
+        f"--batch_size {args.batch_size} "
+        f"--stage1_epochs {args.stage1_epochs} "
+        f"--stage1_lr {args.stage1_lr} "
+        f"--stage2_epochs {args.stage2_epochs} "
+        f"--stage2_lr {args.stage2_lr} "
+        f"--ckpt_out {out_ckpt_rel} "
+        f"--out_json {out_log_rel} "
+        f"2>&1 | tee outputs/{tag}_train_stdout.log"
+    )
+    remote_exec(remote_cmd, dry_run=args.dry_run)
+
+    print(f"[Train-Scratch] Pulling {out_ckpt_rel} & {out_log_rel} ...")
+    scp_pull(out_ckpt_rel, ROOT / out_ckpt_rel, dry_run=args.dry_run)
+    scp_pull(out_log_rel, ROOT / out_log_rel, dry_run=args.dry_run)
+    verify_sha256([out_ckpt_rel, out_log_rel], dry_run=args.dry_run)
+    print("[Train-Scratch Done]")
+
+
 def cmd_resume(args: argparse.Namespace) -> None:
     tag = args.tag
     base_ckpt_rel = args.base_ckpt.replace("\\", "/")
@@ -261,6 +292,15 @@ def main() -> None:
     # sync
     sub.add_parser("sync", help="同步代码与 ids.txt 至 llm24g 并校验 SHA256")
 
+    # train (from scratch)
+    p_trn = sub.add_parser("train", help="从零在 RTX 4090 上训练全新版本权重")
+    p_trn.add_argument("--tag", required=True, help="新版本标签（如 v43）")
+    p_trn.add_argument("--stage1_epochs", type=int, default=5)
+    p_trn.add_argument("--stage1_lr", type=float, default=1e-4)
+    p_trn.add_argument("--stage2_epochs", type=int, default=35)
+    p_trn.add_argument("--stage2_lr", type=float, default=1e-4)
+    p_trn.add_argument("--batch_size", type=int, default=16)
+
     # resume
     p_res = sub.add_parser("resume", help="基于已有权重在 RTX 4090 上续训")
     p_res.add_argument("--base_ckpt", default="checkpoints/v41_zh_sdf_global.pt", help="基础权重路径")
@@ -295,6 +335,7 @@ def main() -> None:
     args = parser.parse_args()
     dispatch = {
         "sync": cmd_sync,
+        "train": cmd_train,
         "resume": cmd_resume,
         "build": cmd_build,
         "compare": cmd_compare,
