@@ -229,9 +229,12 @@ class StructuralGateV3:
             ep_ok = True
             jc_ok = True
 
+        # Allow SkipPro calligraphic bow (e.g. 子 rightward curve-hook) when overall Chamfer & miss ratios are low
+        p95_limit = 92.0 if (chamfer <= 28.0 and miss_sc <= 0.15 and miss_cand <= 0.15) else 72.3
+
         shape_ok = (
             (chamfer <= 37.5)
-            and (p95_ch <= 72.3)
+            and (p95_ch <= p95_limit)
             and (strip_max_ch <= 48.0)
             and (cos3x3 >= 0.80)
             and (miss_sc <= 0.245)
@@ -292,7 +295,7 @@ class StructuralGateV3:
         fail_reasons: List[str] = []
         if chamfer > 37.5:
             fail_reasons.append(f"chamfer={chamfer:.1f}")
-        if p95_ch > 72.3:
+        if p95_ch > p95_limit:
             fail_reasons.append(f"p95={p95_ch:.1f}")
         if strip_max_ch > 48.0:
             fail_reasons.append(f"strip_max_ch={strip_max_ch:.1f}")

@@ -206,21 +206,26 @@ def main():
     # --- 1. SCVariants ---
     v_stage0b: List[str] = []
     v_sdf_queue: List[str] = []
-    for ch in tqdm(variant_targets, desc="SCVariants Vector/Stage0a", mininterval=5):
+    for ch in tqdm(variant_targets, desc="SCVariants Dispatch", mininterval=5):
         ex_boxes = cls_res.exempt_boxes_map.get(ch)
         if ch in edited_masters and ch in master_cmds_map:
             _record_accept(ch, master_cmds_map[ch], "Tier0_MasterEdited", {"note": "manual_edit"}, True)
             continue
-        if args.use_legacy_v3_tiers and ch in master_cmds_map and master_prov.get(ch, "").startswith("Tier0_") and master_prov.get(ch) != "Tier0_Native":
-            ok_m, gm_m = gate.check(master_cmds_map[ch], ch, exempt_boxes=ex_boxes)
-            if ok_m:
-                _record_accept(ch, master_cmds_map[ch], master_prov[ch], gm_m, True)
+        if args.use_legacy_v3_tiers:
+            if ch in master_cmds_map and master_prov.get(ch, "").startswith("Tier0_") and master_prov.get(ch) != "Tier0_Native":
+                ok_m, gm_m = gate.check(master_cmds_map[ch], ch, exempt_boxes=ex_boxes)
+                if ok_m:
+                    _record_accept(ch, master_cmds_map[ch], master_prov[ch], gm_m, True)
+                    continue
+            r0 = tier0_stage0a_vector_surgery(ch, skip_ext, sn_jp, sn_sc, bank, gate, exempt_boxes=ex_boxes)
+            if r0 is not None:
+                _record_accept(ch, r0[0], r0[1], r0[2], True)
                 continue
-        r0 = tier0_stage0a_vector_surgery(ch, skip_ext, sn_jp, sn_sc, bank, gate, exempt_boxes=ex_boxes)
-        if r0 is not None:
-            _record_accept(ch, r0[0], r0[1], r0[2], True)
-            continue
-        v_stage0b.append(ch)
+            v_stage0b.append(ch)
+        else:
+            # Pure v4.3 mode: route SCVariants directly to full-glyph Tier 3 Global SDF
+            # (eliminates Tier0_LocalInpaint mask-boundary seams & shattered fragments)
+            v_sdf_queue.append(ch)
 
     if v_stage0b:
         print(f"[v4-Build] Stage 0b local inpainting for {len(v_stage0b)} SCVariants...", flush=True)
