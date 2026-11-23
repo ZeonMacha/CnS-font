@@ -51,12 +51,16 @@ class ZHSDFSynthesizerV4:
         self.canvas_size = canvas_size
         self.trunc_px = 16.0 * (canvas_size / 256.0)
 
+        state = torch.load(ckpt_path, map_location=self.device, weights_only=True)
+        # Auto-detect v4.0 (legacy stride-2 up0) vs v4.1 (128x128 skip up0) from checkpoint keys
+        decoder_version = "v40" if "up0.0.weight" in state else "v41"
+
         self.model = GlobalGlyphTransformer(
             in_channels=4, canvas_size=canvas_size,
             d_model=d_model, n_heads=n_heads,
             n_transformer_layers=n_transformer_layers,
+            decoder_version=decoder_version,
         ).to(self.device)
-        state = torch.load(ckpt_path, map_location=self.device, weights_only=True)
         self.model.load_state_dict(state)
         self.model.eval()
 
@@ -67,7 +71,7 @@ class ZHSDFSynthesizerV4:
             cjk_ascender=880,
         )
         self.n_params = self.model.count_parameters()
-        print(f"[v4-Synth] Loaded GlobalGlyphTransformer: {self.n_params:,} params ({self.n_params/1e6:.1f}M)", flush=True)
+        print(f"[v4-Synth] Loaded GlobalGlyphTransformer ({decoder_version}): {self.n_params:,} params ({self.n_params/1e6:.1f}M)", flush=True)
 
     def predict_sdf_batch(
         self,
@@ -120,8 +124,8 @@ class ZHSDFSynthesizerV4:
             raw_cmds,
             ref_sc_cmds=ref_sc_cmds,
             stem_concave_sagitta=0.85,
-            max_hausdorff_upem=4.0,
-            max_area_rel=0.015,
+            max_hausdorff_upem=4.5,
+            max_area_rel=0.018,
         )
         return clean_cmds, raw_cmds, opt_stats
 

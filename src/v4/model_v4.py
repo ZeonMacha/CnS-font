@@ -127,6 +127,7 @@ class GlobalGlyphTransformer(nn.Module):
         dropout: float = 0.1,
         max_shift_px: float = 8.0,
         delta_scale: float = 0.95,
+        decoder_version: str = "v41",
     ) -> None:
         super().__init__()
         self.canvas_size = canvas_size
@@ -134,6 +135,7 @@ class GlobalGlyphTransformer(nn.Module):
         self.d_model = d_model
         self.max_shift_px = max_shift_px
         self.delta_scale = delta_scale
+        self.decoder_version = decoder_version
 
         self.grid_h = canvas_size // patch_size
         self.grid_w = canvas_size // patch_size
@@ -196,12 +198,21 @@ class GlobalGlyphTransformer(nn.Module):
             nn.Upsample(scale_factor=2, mode="bilinear", align_corners=False),
             ResBlock(c1),
         )
-        self.up0 = nn.Sequential(
-            nn.Conv2d(c1, c1 // 2, kernel_size=3, stride=2, padding=1, bias=False),
-            nn.GroupNorm(min(8, c1 // 2), c1 // 2),
-            nn.SiLU(inplace=True),
-            nn.Upsample(scale_factor=4, mode="bilinear", align_corners=False),
-        )
+        if decoder_version == "v40":
+            # Legacy v4.0 decoder (kept only for loading legacy v4_zh_sdf_global.pt)
+            self.up0 = nn.Sequential(
+                nn.Conv2d(c1, c1 // 2, kernel_size=3, stride=2, padding=1, bias=False),
+                nn.GroupNorm(min(8, c1 // 2), c1 // 2),
+                nn.SiLU(inplace=True),
+                nn.Upsample(scale_factor=4, mode="bilinear", align_corners=False),
+            )
+        else:
+            # v4.1 high-resolution decoder: fuse f0 (128x128) skip, upsample 128->256, refine at full 256x256
+            self.up0 = nn.Sequential(
+                CNNBlock(c1 * 2, c1 // 2),
+                nn.Upsample(scale_factor=2, mode="bilinear", align_corners=False),
+                ResBlock(c1 // 2),
+            )
 
         # SDF Heads
         c_final = c1 // 2
@@ -267,7 +278,10 @@ class GlobalGlyphTransformer(nn.Module):
         u3 = self.up3(torch.cat([spatial, f3], dim=1))  # (B, 192, 32, 32)
         u2 = self.up2(torch.cat([u3, f2], dim=1))       # (B, 96, 64, 64)
         u1 = self.up1(torch.cat([u2, f1], dim=1))       # (B, 48, 128, 128)
-        u0 = self.up0(u1)                               # (B, 24, 256, 256)
+        if self.decoder_version == "v40":
+            u0 = self.up0(u1)                           # (B, 24, 256, 256) legacy
+        else:
+            u0 = self.up0(torch.cat([u1, f0], dim=1))   # (B, 24, 256, 256) v4.1 with 128x128 skip
 
         # SDF Heads
         flow_px = self.max_shift_px * torch.tanh(self.flow_head(u0))

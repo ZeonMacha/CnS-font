@@ -1,18 +1,39 @@
 {
-  "elapsed_sec": 699.7,
+  "elapsed_sec": 1003.2,
   "tonggui_total": 8105,
-  "missing_targets": 4101,
-  "missing_packed": 4100,
-  "variant_targets": 0,
-  "variants_packed": 0,
-  "blocked_to_review": 1,
-  "gate_pass_rate": 0.9998,
-  "sc_variant_tier0_share": 0.0,
+  "missing_targets": 4106,
+  "missing_packed": 4105,
+  "variant_targets": 1323,
+  "variants_packed": 1110,
+  "blocked_to_review": 214,
+  "gate_pass_rate": 0.9606,
+  "sc_variant_tier0_share": 0.7627,
   "tier_breakdown_missing": {
-    "Tier2_Atomic": 1,
-    "Tier3_GlobalSDF": 4099
+    "MasterDirect": 81,
+    "Tier1": 1902,
+    "Tier3_GlobalSDF": 2122
   },
-  "tier_breakdown_variants": {},
+  "tier_breakdown_variants": {
+    "Tier0_LocalInpaint": 869,
+    "Tier0_ZouInnerNative": 24,
+    "Tier0_IDS": 18,
+    "Tier0_RegionInpaint": 87,
+    "Tier0_DotSwap": 2,
+    "Tier0_IslandInpaint": 4,
+    "Tier0_WideLocalInpaint": 5,
+    "Tier1": 36,
+    "Tier3_GlobalSDF": 65
+  },
+  "keep_policy_12_tg": 8,
+  "keep_same_gid": 1453,
+  "keep_v1_v2_exempt": 349,
+  "keep_already_sc": 871,
+  "merged_tg_coverage_by_level": {
+    "1": 3500,
+    "2": 3000,
+    "3": 1604
+  },
+  "merged_tg_total_covered": 8104,
   "model": "GlobalGlyphTransformer d=768 L=4 H=12",
   "invariants": {
     "missing_disjoint_variants": true,

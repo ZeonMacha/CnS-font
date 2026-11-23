@@ -3,7 +3,7 @@
 import urllib.request
 import sys
 
-url = "https://raw.githubusercontent.com/Unifont/cjkvi-ids/master/ids.txt"
+url = "https://raw.githubusercontent.com/cjkvi/cjkvi-ids/master/ids.txt"
 out_path = "/home/llm24g/cns_font/data_v2/ids.txt"
 
 print(f"Downloading {url} -> {out_path}...")

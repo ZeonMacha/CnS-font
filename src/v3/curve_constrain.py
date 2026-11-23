@@ -99,6 +99,54 @@ def _bidirectional_hausdorff(pts_a: np.ndarray, pts_b: np.ndarray) -> float:
     return float(max(float(da.max()), float(db.max())))
 
 
+def _taubin_smooth_open_segment(seg: np.ndarray, n_iters: int = 2, lam: float = 0.45, mu: float = -0.46) -> np.ndarray:
+    """
+    Shrinking-free Taubin λ-μ low-pass smoothing for an open polyline segment (M, 2).
+    Fixes endpoints seg[0] and seg[-1] while damping high-frequency SDF staircase/wobble
+    waves along curved strokes (撇/捺/竖弯钩) without flattening true macro curvature.
+    """
+    if len(seg) < 5:
+        return seg
+    pts = seg.astype(np.float64, copy=True)
+    for _ in range(n_iters):
+        for w in (lam, mu):
+            nxt = pts.copy()
+            # Laplacian step on interior points only; endpoints stay anchored
+            lap = 0.5 * (pts[:-2] + pts[2:]) - pts[1:-1]
+            nxt[1:-1] = pts[1:-1] + w * lap
+            pts = nxt
+    return pts
+
+
+def _fit_core_straight_line(seg: np.ndarray) -> Tuple[np.ndarray, np.ndarray, float, float]:
+    """
+    Measure straightness on the interior core of `seg` (excluding 12.5% serif flare ends
+    when len >= 8) via PCA/OLS direction, returning `(p0_proj, p1_proj, max_perp, angle_deg)`.
+    """
+    if len(seg) >= 8:
+        trim = max(1, len(seg) // 8)
+        core = seg[trim:-trim]
+    else:
+        core = seg
+    mean = core.mean(axis=0)
+    centered = core - mean
+    cov = centered.T @ centered
+    eigvals, eigvecs = np.linalg.eigh(cov)
+    # Principal axis direction aligned with seg[0] -> seg[-1]
+    u = eigvecs[:, 1]
+    chord = seg[-1] - seg[0]
+    if float(np.dot(u, chord)) < 0.0:
+        u = -u
+    perp_core = np.abs(centered[:, 0] * (-u[1]) + centered[:, 1] * u[0])
+    max_perp = float(perp_core.max()) if len(perp_core) else 0.0
+    t0 = float(np.dot(seg[0] - mean, u))
+    t1 = float(np.dot(seg[-1] - mean, u))
+    p0_proj = mean + t0 * u
+    p1_proj = mean + t1 * u
+    ang = abs(float(np.degrees(np.arctan2(u[1], u[0]))))
+    return p0_proj, p1_proj, max_perp, ang
+
+
 def _fit_unconstrained_contour(pts_dense: np.ndarray) -> List[DrawCmd]:
     """Produce baseline un-snapped bounded cubic Bézier contour without straight-stem snapping."""
     ring = np.vstack([pts_dense, pts_dense[0:1]])
@@ -113,8 +161,8 @@ def _fit_unconstrained_contour(pts_dense: np.ndarray) -> List[DrawCmd]:
     for k in range(nc):
         i0, i1 = corners[k], corners[(k + 1) % nc]
         idx = [m % n for m in range(i0, (i1 + 1) if i1 > i0 else (i1 + n + 1))]
-        seg = pts[idx]
-        for op, cpts in _fit_curve_recursive(seg, max_err=1.35):
+        seg = _taubin_smooth_open_segment(pts[idx], n_iters=2)
+        for op, cpts in _fit_curve_recursive(seg, max_err=1.8):
             out.append((op, [(round(float(x), 1), round(float(y), 1)) for x, y in cpts]))
     out.append(("closePath", []))
     return out
@@ -124,11 +172,12 @@ def optimize_synthesized_contours_v3(
     raw_cmds: List[DrawCmd],
     ref_sc_cmds: Optional[List[DrawCmd]] = None,
     stem_concave_sagitta: float = 0.85,
-    max_hausdorff_upem: float = 4.0,
-    max_area_rel: float = 0.015,
+    max_hausdorff_upem: float = 4.5,
+    max_area_rel: float = 0.018,
 ) -> Tuple[List[DrawCmd], Dict[str, int]]:
     """
-    Apply curvature-masked, Hausdorff-guarded straight-stem refinement (`Plan3.0.md §2.2`).
+    Apply curvature-masked, Hausdorff-guarded straight-stem refinement + Taubin arc smoothing
+    (Scheme A / v4.1 upgrade over Plan3.0 §2.2).
     Returns `(final_cmds, stats)` where `stats` tracks kept vs reverted contours.
     """
     contours = split_cmds_into_contours(raw_cmds)
@@ -171,18 +220,23 @@ def optimize_synthesized_contours_v3(
                 continue
             v = seg[-1] - seg[0]
             L = float(np.linalg.norm(v))
-            if L < 55.0:
+            if L < 52.0:
                 continue
-            u = v / L
-            perp = np.abs((seg - seg[0])[:, 0] * (-u[1]) + (seg - seg[0])[:, 1] * u[0])
-            if float(perp.max()) > 4.0:
+            p0_proj, p1_proj, max_perp, ang = _fit_core_straight_line(seg)
+            if max_perp > 4.5:
                 continue
-            ang = abs(np.degrees(np.arctan2(v[1], v[0])))
-            if ang <= 2.8 or abs(ang - 180.0) <= 2.8:
+            is_h_strict = ang <= 1.8 or abs(ang - 180.0) <= 1.8
+            is_h_tilt = (not is_h_strict) and (ang <= 3.5 or abs(ang - 180.0) <= 3.5)
+            is_v = abs(ang - 90.0) <= 3.2
+            if is_h_strict:
                 ym = round(float(np.median(seg[:, 1])), 1)
                 snapped_pts[idx[0], 1] = ym
                 snapped_pts[idx[-1], 1] = ym
-            elif abs(ang - 90.0) <= 2.8:
+            elif is_h_tilt:
+                # Preserve SkipPro's natural 1.8-3.5 deg upward calligraphic rise on horizontals
+                snapped_pts[idx[0]] = np.round(p0_proj, 1)
+                snapped_pts[idx[-1]] = np.round(p1_proj, 1)
+            elif is_v:
                 xm = round(float(np.median(seg[:, 0])), 1)
                 snapped_pts[idx[0], 0] = xm
                 snapped_pts[idx[-1], 0] = xm
@@ -198,18 +252,18 @@ def optimize_synthesized_contours_v3(
             L = float(np.linalg.norm(v))
             if L < 0.8:
                 continue
-            u = v / L
-            max_perp = float(np.abs((seg - p0)[:, 0] * (-u[1]) + (seg - p0)[:, 1] * u[0]).max())
-            ang = abs(np.degrees(np.arctan2(v[1], v[0])))
-            is_ortho = ang <= 2.8 or abs(ang - 180.0) <= 2.8 or abs(ang - 90.0) <= 2.8
+            _, _, max_perp, ang = _fit_core_straight_line(seg)
+            is_ortho_or_tilt = (ang <= 3.5 or abs(ang - 180.0) <= 3.5 or abs(ang - 90.0) <= 3.2)
             hits_curve = _segment_hits_no_snap(seg, no_snap)
 
-            if (not hits_curve) and is_ortho and L >= 55.0 and max_perp <= 4.0:
+            if (not hits_curve) and is_ortho_or_tilt and L >= 52.0 and max_perp <= 4.5:
                 c_snap.append(_make_stem_primitive((float(p0[0]), float(p0[1])), (float(p3[0]), float(p3[1])), stem_concave_sagitta))
-            elif (not hits_curve) and max_perp <= 1.8:
+            elif (not hits_curve) and max_perp <= 2.0:
                 c_snap.append(("lineTo", [(round(float(p3[0]), 1), round(float(p3[1]), 1))]))
             else:
-                for op, cpts in _fit_curve_recursive(seg, max_err=1.4):
+                # Smooth curved spans with Taubin filter + slightly looser tolerance (2.2u) to prevent wavy micro-segments
+                seg_smooth = _taubin_smooth_open_segment(seg, n_iters=2)
+                for op, cpts in _fit_curve_recursive(seg_smooth, max_err=2.2):
                     c_snap.append((op, [(round(float(x), 1), round(float(y), 1)) for x, y in cpts]))
         c_snap.append(("closePath", []))
 

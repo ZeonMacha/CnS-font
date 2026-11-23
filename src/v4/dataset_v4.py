@@ -222,43 +222,53 @@ class FullGlyphDatasetV4(Dataset):
         dw = float(np.random.uniform(-0.08, 0.10))
         x[0] = torch.clamp(x[0] + dw, -1.0, 1.0)
 
-        # Uniform half-width jitter: rescale channel 1 (skel_sdf)
-        # Original: r_u=40, trunc=16*4.656=74.5
-        # New r_u: jitter around 40
+        # Uniform half-width jitter: exact additive shift on channel 1 (skel_sdf)
+        # ch1 = (r_u_orig - dt) / trunc_u  =>  ch1_new = ch1 + (r_u_new - r_u_orig) / trunc_u
+        upem_per_px = (1000.0 + 2.0 * 96.0) / float(self.canvas_size)
+        trunc_u = 16.0 * upem_per_px
         r_u_new = float(np.random.uniform(32.0, 48.0))
         r_u_orig = 40.0
-        scale_factor = r_u_orig / r_u_new
-        x[1] = torch.clamp(x[1] * scale_factor, -1.0, 1.0)
+        x[1] = torch.clamp(x[1] + (r_u_new - r_u_orig) / trunc_u, -1.0, 1.0)
 
-        # Random small rotation (±2°) — applied to all channels
+        # Random small rotation (±2°) — applied SYNCHRONOUSLY to x and y!
         if np.random.random() < 0.5:
             angle = float(np.random.uniform(-2.0, 2.0))
-            x = self._rotate_tensor(x, angle)
+            x_sdf = self._rotate_tensor(x[0:2], angle, fill=-1.0)
+            x_ori = self._rotate_tensor(x[2:4], angle, fill=0.0)
+            # Rotate double-angle orientation vector (cos2t, sin2t) by 2*angle
+            rad2 = float(np.deg2rad(-2.0 * angle))
+            c2a, s2a = float(np.cos(rad2)), float(np.sin(rad2))
+            ori_c = x_ori[0] * c2a - x_ori[1] * s2a
+            ori_s = x_ori[0] * s2a + x_ori[1] * c2a
+            x = torch.cat([x_sdf, torch.stack([ori_c, ori_s], dim=0)], dim=0)
+            y = self._rotate_tensor(y, angle, fill=-1.0)
 
-        # Random small scale ([0.95, 1.05])
+        # Random small scale ([0.95, 1.05]) — applied SYNCHRONOUSLY to x and y!
         if np.random.random() < 0.5:
             s = float(np.random.uniform(0.95, 1.05))
-            x = self._scale_tensor(x, s)
+            x_sdf = self._scale_tensor(x[0:2], s, fill=-1.0)
+            x_ori = self._scale_tensor(x[2:4], s, fill=0.0)
+            x = torch.cat([x_sdf, x_ori], dim=0)
+            y = self._scale_tensor(y, s, fill=-1.0)
 
         return x, y, self.chars[idx]
 
     @staticmethod
-    def _rotate_tensor(x: torch.Tensor, angle_deg: float) -> torch.Tensor:
-        """Rotate (C, H, W) tensor by angle_deg degrees around center."""
-        from torchvision.transforms.functional import rotate
-        # (C, H, W) → (1, C, H, W) → rotate → (1, C, H, W) → (C, H, W)
+    def _rotate_tensor(x: torch.Tensor, angle_deg: float, fill: float = -1.0) -> torch.Tensor:
+        """Rotate (C, H, W) tensor by angle_deg degrees around center with explicit background fill."""
+        from torchvision.transforms.functional import InterpolationMode, rotate
         x_4d = x.unsqueeze(0)
-        x_rot = rotate(x_4d, angle_deg, interpolation=2, fill=0)  # BILINEAR
+        x_rot = rotate(x_4d, angle_deg, interpolation=InterpolationMode.BILINEAR, fill=[fill])
         return x_rot.squeeze(0).clamp(-1.0, 1.0)
 
     @staticmethod
-    def _scale_tensor(x: torch.Tensor, scale: float) -> torch.Tensor:
-        """Scale (C, H, W) tensor around center."""
-        from torchvision.transforms.functional import resize
+    def _scale_tensor(x: torch.Tensor, scale: float, fill: float = -1.0) -> torch.Tensor:
+        """Scale (C, H, W) tensor around center with explicit background fill."""
+        from torchvision.transforms.functional import InterpolationMode, resize
         _, h, w = x.shape
-        new_h = int(h * scale)
-        new_w = int(w * scale)
-        x_resized = resize(x.unsqueeze(0), [new_h, new_w], interpolation=2).squeeze(0)
+        new_h = max(2, int(round(h * scale)))
+        new_w = max(2, int(round(w * scale)))
+        x_resized = resize(x.unsqueeze(0), [new_h, new_w], interpolation=InterpolationMode.BILINEAR).squeeze(0)
         # Pad or crop back to original size
         if new_h < h or new_w < w:
             pad_h = h - new_h
@@ -269,7 +279,7 @@ class FullGlyphDatasetV4(Dataset):
                 x_resized,
                 [pad_left, pad_w - pad_left, pad_top, pad_h - pad_top],
                 mode="constant",
-                value=-1.0,
+                value=fill,
             )
         else:
             crop_h = new_h - h

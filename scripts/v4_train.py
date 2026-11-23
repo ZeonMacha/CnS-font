@@ -170,11 +170,11 @@ def train(
     # ── Stage 1: Freeze CNN, train Transformer ─────────────────────
     print(f"\n[v4-Train] === Stage 1: Freeze CNN, Train Transformer ({stage1_epochs} epochs, lr={stage1_lr}) ===", flush=True)
 
-    # Freeze CNN encoder + decoder
+    # Freeze CNN encoder + decoder (keep Transformer + patch_conv/unpatch_conv trainable)
     frozen_params = []
     trainable_params = []
     for name, param in model.named_parameters():
-        is_transformer = "transformer" in name or "patch_proj" in name or "unpatch_proj" in name
+        is_transformer = "transformer" in name or "patch_conv" in name or "unpatch_conv" in name
         if is_transformer:
             param.requires_grad = True
             trainable_params.append(param)
@@ -235,7 +235,7 @@ def train(
         print(
             f"  [S1 Ep {ep:02d}/{stage1_epochs:02d}] ({avg_m['sec']:.1f}s) lr={avg_m['lr']:.2e} | "
             f"sdf={avg_m['sdf_l1']:.4f} grad={avg_m['grad_l1']:.4f} cldice={avg_m['cldice']:.4f} "
-            f"iou={avg_m['soft_iou']:.4f} | VRAM={peak_mb:.0f}MB",
+            f"iou={avg_m['soft_iou']:.4f} eik={avg_m['eikonal']:.4f} curv={avg_m['curv_l1']:.4f} | VRAM={peak_mb:.0f}MB",
             flush=True,
         )
 
@@ -299,7 +299,7 @@ def train(
         print(
             f"  [S2 Ep {ep:02d}/{stage2_epochs:02d}] ({avg_m['sec']:.1f}s) lr={avg_m['lr']:.2e} | "
             f"sdf={avg_m['sdf_l1']:.4f} grad={avg_m['grad_l1']:.4f} cldice={avg_m['cldice']:.4f} "
-            f"iou={avg_m['soft_iou']:.4f} | VRAM={peak_mb:.0f}MB",
+            f"iou={avg_m['soft_iou']:.4f} eik={avg_m['eikonal']:.4f} curv={avg_m['curv_l1']:.4f} | VRAM={peak_mb:.0f}MB",
             flush=True,
         )
 

@@ -68,6 +68,9 @@ class GlobalGlyphLossV4(nn.Module):
         iou_weight: float = 0.6,
         flow_tv_weight: float = 0.08,
         flow_l2_weight: float = 0.01,
+        eikonal_weight: float = 0.25,
+        curv_weight: float = 0.50,
+        curv_tv_weight: float = 0.15,
         trunc_px: float = 16.0,
     ) -> None:
         super().__init__()
@@ -78,6 +81,9 @@ class GlobalGlyphLossV4(nn.Module):
         self.iou_weight = iou_weight
         self.flow_tv_weight = flow_tv_weight
         self.flow_l2_weight = flow_l2_weight
+        self.eikonal_weight = eikonal_weight
+        self.curv_weight = curv_weight
+        self.curv_tv_weight = curv_tv_weight
         self.trunc_px = trunc_px
         self.soft_skel = SoftSkeletonizeV4(num_iter=5)
 
@@ -172,7 +178,41 @@ class GlobalGlyphLossV4(nn.Module):
         tv_y = (f[:, :, 1:, :] - f[:, :, :-1, :]).abs().mean()
         loss_flow = self.flow_tv_weight * (tv_x + tv_y) + self.flow_l2_weight * (f ** 2).mean()
 
-        # 7. [Optional] OCR auxiliary loss
+        # 7. Narrow-band Eikonal & Mean-Curvature Alignment + Curvature TV (FP32 for 2nd-order stability)
+        pgx32, pgy32 = self._spatial_grad(p32)
+        tgx32, tgy32 = self._spatial_grad(t32)
+        p_gnorm = torch.sqrt(pgx32 * pgx32 + pgy32 * pgy32 + 1e-6)
+        t_gnorm = torch.sqrt(tgx32 * tgx32 + tgy32 * tgy32 + 1e-6)
+        expected_gnorm = 1.0 / max(self.trunc_px, 1.0)
+        # Valid narrow-band mask excluding medial-axis ridges where |grad t| drops near 0
+        eik_mask = ((t32.abs() < 0.35) & (t_gnorm > 0.5 * expected_gnorm)).float()
+        eik_denom = eik_mask.sum().clamp_min(16.0)
+        loss_eikonal = (eik_mask * ((p_gnorm - expected_gnorm) / expected_gnorm) ** 2).sum() / eik_denom
+
+        # Mean curvature kappa = div(grad(phi) / |grad(phi)|) on smooth curved strokes (excluding sharp 90deg corners)
+        pnx32, pny32 = pgx32 / p_gnorm, pgy32 / p_gnorm
+        tnx32, tny32 = tgx32 / t_gnorm, tgy32 / t_gnorm
+        dpnx_dx, _ = self._spatial_grad(pnx32)
+        _, dpny_dy = self._spatial_grad(pny32)
+        dtnx_dx, _ = self._spatial_grad(tnx32)
+        _, dtny_dy = self._spatial_grad(tny32)
+        kappa_p = (dpnx_dx + dpny_dy).clamp(-2.0, 2.0)
+        kappa_t = (dtnx_dx + dtny_dy).clamp(-2.0, 2.0)
+
+        t_curv32 = t_curv.float()
+        curve_mask = ((t32.abs() < 0.30) & (t_gnorm > 0.5 * expected_gnorm) & (t_curv32 >= 0.04) & (t_curv32 < 0.55)).float()
+        curv_denom = curve_mask.sum().clamp_min(16.0)
+        loss_curv = (curve_mask * (kappa_p - kappa_t).abs()).sum() / curv_denom
+
+        # Curvature TV suppresses multi-inflection wobbles along smooth arcs and straight stems
+        smooth_band = ((t32.abs() < 0.30) & (t_gnorm > 0.5 * expected_gnorm) & (t_curv32 < 0.55)).float()
+        cm_x = smooth_band[:, :, :, 1:] * smooth_band[:, :, :, :-1]
+        cm_y = smooth_band[:, :, 1:, :] * smooth_band[:, :, :-1, :]
+        tv_kx = (cm_x * (kappa_p[:, :, :, 1:] - kappa_p[:, :, :, :-1]).abs()).sum() / cm_x.sum().clamp_min(16.0)
+        tv_ky = (cm_y * (kappa_p[:, :, 1:, :] - kappa_p[:, :, :-1, :]).abs()).sum() / cm_y.sum().clamp_min(16.0)
+        loss_curv_tv = tv_kx + tv_ky
+
+        # 8. [Optional] OCR auxiliary loss
         loss_ocr = torch.tensor(0.0, device=p.device)
         if ocr_logits is not None and ocr_targets is not None:
             loss_ocr = F.cross_entropy(ocr_logits, ocr_targets)
@@ -184,6 +224,9 @@ class GlobalGlyphLossV4(nn.Module):
             + self.cldice_weight * loss_cldice
             + self.iou_weight * loss_iou
             + loss_flow
+            + self.eikonal_weight * loss_eikonal
+            + self.curv_weight * loss_curv
+            + self.curv_tv_weight * loss_curv_tv
             + ocr_weight * loss_ocr
         )
 
@@ -194,6 +237,9 @@ class GlobalGlyphLossV4(nn.Module):
             "cldice": float(loss_cldice.detach()),
             "soft_iou": float(soft_iou_val.detach()),
             "flow_tv": float((tv_x + tv_y).detach()),
+            "eikonal": float(loss_eikonal.detach()),
+            "curv_l1": float(loss_curv.detach()),
+            "curv_tv": float(loss_curv_tv.detach()),
             "stem_frac": float(stem_mask.mean().detach()),
         }
         if ocr_logits is not None:

@@ -18,6 +18,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import tempfile
 import time
 from collections import Counter
 from pathlib import Path
@@ -35,7 +36,7 @@ from src.v2.curve_optimizer import count_outline_stats
 from src.v2.hb_outlines import DrawCmd, SkipProOutlineExtractor, load_tg8105_table
 from src.v3 import HARD_KEEP_12, HARD_KEEP_CHARS
 from src.v3.curve_constrain import optimize_synthesized_contours_v3
-from src.v3.hb_light import measure_skippro_hv_halfwidths
+from src.v3.hb_light import SansLightExtractor, measure_skippro_hv_halfwidths
 from src.v3.local_inpainter import (
     AtomicStrokeAssemblerV3,
     DonorBankV3,
@@ -47,7 +48,6 @@ from src.v3.otf_packager import build_standalone_cns_otf
 from src.v3.structural_gate import StructuralGateV3
 from src.v3.variant_classifier import classify_tg8105_v3, load_variant_policy
 from src.v4.synthesizer_v4 import ZHSDFSynthesizerV4
-from src.v2.hb_outlines import HBOutlineExtractor
 
 
 def _load_master_state(master_otf: Path):
@@ -86,19 +86,37 @@ def main():
     parser.add_argument("--d_model", type=int, default=768)
     parser.add_argument("--n_layers", type=int, default=4)
     parser.add_argument("--n_heads", type=int, default=12)
+    parser.add_argument("--noto_weight", type=int, default=None, help="Variable font wght axis (None for static TTC)")
+    parser.add_argument("--version_tag", type=str, default="v4", help="Output filename tag (e.g. v4 or v41)")
+    parser.add_argument("--allow_empty_ids", action="store_true", help="Allow running without full cjkvi-ids ids.txt")
     args = parser.parse_args()
 
     t0 = time.time()
     skip_ext = SkipProOutlineExtractor(args.skip_otf)
-    sn_jp = HBOutlineExtractor(args.noto_sans, ttc_index=0, weight=None)
-    sn_sc = HBOutlineExtractor(args.noto_sans, ttc_index=2, weight=None)
+    sn_jp = SansLightExtractor(args.noto_sans, language="ja", weight=args.noto_weight)
+    sn_sc = SansLightExtractor(args.noto_sans, language="zh-Hans", weight=args.noto_weight)
     gate = StructuralGateV3(sn_jp, sn_sc)
     tg_levels = load_tg8105_table(args.tg_dir)
     ids_map = parse_cjkvi_ids(args.ids_path)
+    if not args.allow_empty_ids and len(ids_map) < 10000:
+        raise RuntimeError(
+            f"IDS table too small ({len(ids_map)} entries from {args.ids_path}). "
+            "Download cjkvi-ids ids.txt or pass --allow_empty_ids."
+        )
+    print(f"[v4-Build] Loaded {len(ids_map)} IDS entries from {args.ids_path}", flush=True)
     policy_map = load_variant_policy(args.policy_tsv)
 
     print("[v4-Build] Classifying TG-8105...", flush=True)
     cls_res = classify_tg8105_v3(tg_levels, skip_ext, sn_jp, sn_sc, gate, ids_map, policy_map)
+    print(
+        f"[v4-Build] Classification: missing={len(cls_res.missing)} | sc_variant={len(cls_res.sc_variant)} | "
+        f"keep_policy={len(cls_res.keep_policy)} | keep_same_gid={len(cls_res.keep_same_gid)} | "
+        f"keep_v1_v2={len(cls_res.keep_v1_v2)} | keep_already_sc={len(cls_res.keep_already_sc)}",
+        flush=True,
+    )
+    assert len(cls_res.sc_variant) > 0, (
+        "Classifier produced 0 SC variants! Check sn_jp/sn_sc language binding and Noto Sans CJK TTC."
+    )
     sc_variant_set = set(cls_res.sc_variant)
     h_half, v_half = measure_skippro_hv_halfwidths(skip_ext, cls_res.keep_same_gid, sample_n=150)
 
@@ -269,8 +287,9 @@ def main():
 
     # --- 3. Package ---
     args.out_dir.mkdir(parents=True, exist_ok=True)
-    missing_otf = args.out_dir / "CnS-SkipPro-B-v4-Missing.otf"
-    variants_otf = args.out_dir / "CnS-SkipPro-B-v4-SCVariants.otf"
+    vtag = args.version_tag
+    missing_otf = args.out_dir / f"CnS-SkipPro-B-{vtag}-Missing.otf"
+    variants_otf = args.out_dir / f"CnS-SkipPro-B-{vtag}-SCVariants.otf"
 
     n_miss = build_standalone_cns_otf(args.skip_otf, missing_otf, missing_cmds,
                                        family_name="CnS SkipPro B Missing", style_name="Bold",
@@ -281,27 +300,42 @@ def main():
 
     review_dir = ROOT / "manual_review"
     review_dir.mkdir(parents=True, exist_ok=True)
-    review_json = review_dir / "v4_needs_review.json"
+    review_json = review_dir / f"{vtag}_needs_review.json"
     review_json.write_text(json.dumps(needs_review_info, ensure_ascii=False, indent=2), encoding="utf-8")
     if needs_review_cmds:
-        review_otf = review_dir / "v4_needs_review.otf"
+        review_otf = review_dir / f"{vtag}_needs_review.otf"
         build_standalone_cns_otf(args.skip_otf, review_otf, needs_review_cmds,
-                                  family_name="CnS v4 Needs Review", style_name="Bold",
-                                  ps_name="CnSv4NeedsReview-Bold", subroutinize=False)
+                                  family_name=f"CnS {vtag} Needs Review", style_name="Bold",
+                                  ps_name=f"CnS{vtag}NeedsReview-Bold", subroutinize=False)
 
     # --- 4. Verify invariants ---
     ext_m = SkipProOutlineExtractor(missing_otf)
     ext_v = SkipProOutlineExtractor(variants_otf)
-    cmap_m = {cp for cp in ext_m.cmap if cp != 0}
-    cmap_v = {cp for cp in ext_v.cmap if cp != 0}
-    cmap_base = {cp for cp in skip_ext.cmap if cp != 0}
-    assert cmap_m.isdisjoint(cmap_v), f"Missing/SCVariants overlap: {len(cmap_m & cmap_v)}"
-    assert cmap_m.isdisjoint(cmap_base), f"Missing overlaps base: {len(cmap_m & cmap_base)}"
-    assert cmap_v.issubset(cmap_base), f"SCVariants has {len(cmap_v - cmap_base)} new chars"
-    assert set(HARD_KEEP_12).isdisjoint(cmap_m | cmap_v), "HARD_KEEP_12 leaked!"
-    ext_m.close()
-    ext_v.close()
-    skip_ext.close()
+    try:
+        cmap_m = {cp for cp in ext_m.cmap if cp != 0}
+        cmap_v = {cp for cp in ext_v.cmap if cp != 0}
+        cmap_base = {cp for cp in skip_ext.cmap if cp != 0}
+        assert cmap_m.isdisjoint(cmap_v), f"Missing/SCVariants overlap: {len(cmap_m & cmap_v)}"
+        assert cmap_m.isdisjoint(cmap_base), f"Missing overlaps base: {len(cmap_m & cmap_base)}"
+        assert cmap_v.issubset(cmap_base), f"SCVariants has {len(cmap_v - cmap_base)} new chars"
+        assert set(HARD_KEEP_12).isdisjoint(cmap_m | cmap_v), "HARD_KEEP_12 leaked!"
+        assert len(cmap_v) > 0, "SCVariants OTF is empty!"
+
+        with tempfile.TemporaryDirectory() as tmpd:
+            tmp_merged = Path(tmpd) / "tmp_merged_v4.otf"
+            merge_split_fonts(args.skip_otf, missing_otf, variants_otf, tmp_merged, subroutinize=False)
+            ext_merged = SkipProOutlineExtractor(tmp_merged)
+            try:
+                covered_by_level = {
+                    lv: sum(1 for c, clv in tg_levels.items() if clv == lv and ext_merged.has_char(c))
+                    for lv in (1, 2, 3)
+                }
+            finally:
+                ext_merged.close()
+    finally:
+        ext_m.close()
+        ext_v.close()
+        skip_ext.close()
 
     tier0_v_cnt = sum(cnt for k, cnt in tier_counts_v.items() if k.startswith("Tier0_"))
     tier0_v_share = tier0_v_cnt / float(max(len(variant_targets), 1))
@@ -321,6 +355,12 @@ def main():
         "sc_variant_tier0_share": round(tier0_v_share, 4),
         "tier_breakdown_missing": dict(tier_counts_m),
         "tier_breakdown_variants": dict(tier_counts_v),
+        "keep_policy_12_tg": len(cls_res.keep_policy),
+        "keep_same_gid": len(cls_res.keep_same_gid),
+        "keep_v1_v2_exempt": len(cls_res.keep_v1_v2),
+        "keep_already_sc": len(cls_res.keep_already_sc),
+        "merged_tg_coverage_by_level": covered_by_level,
+        "merged_tg_total_covered": sum(covered_by_level.values()),
         "model": f"GlobalGlyphTransformer d={args.d_model} L={args.n_layers} H={args.n_heads}",
         "invariants": {
             "missing_disjoint_variants": True,
@@ -329,8 +369,8 @@ def main():
             "hard_keep_12_point_exact": True,
         },
     }
-    (args.out_dir / "v4_glyph_manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
-    (args.out_dir / "v4_metrics.json").write_text(json.dumps(metrics, ensure_ascii=False, indent=2), encoding="utf-8")
+    (args.out_dir / f"{vtag}_glyph_manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+    (args.out_dir / f"{vtag}_metrics.json").write_text(json.dumps(metrics, ensure_ascii=False, indent=2), encoding="utf-8")
     print("\n[v4-Build] SUMMARY:", flush=True)
     print(json.dumps(metrics, ensure_ascii=False, indent=2), flush=True)
 
