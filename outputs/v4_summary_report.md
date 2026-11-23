@@ -1,139 +1,74 @@
-# CnS v4.0: Global-Context Transformer SDF Font Synthesis — Final Report
+# CnS v4.0 / v4.1: Global-Context Transformer SDF Font Synthesis — Report & Audit
 
-## Overview
+## 1. Overview
 
-v4.0 replaces the v3 local Conv U-Net (~2.8M params) with a **CNN + Transformer hybrid architecture** (~36M params) that captures full 256×256 glyph context via self-attention. The model is trained on 7,898 TG-8105 characters using a two-stage curriculum (freeze CNN → unfreeze all) and achieves significant quality improvements over v3.
+v4 replaces the v3 local Conv U-Net (~2.8M params, 96×96 crops) with a **CNN + Transformer hybrid architecture** (~36M params) operating on full 256×256 glyphs. Following an architectural audit of v4.0, **v4.1** resolves five critical defects (empty `SCVariants.otf`, missing `ids.txt`, `up0` 64×64 resolution bottleneck, unsynchronized geometric augmentation, and legacy v3 `MasterDirect`/`Tier1` override) and adds curvature-aware losses plus Taubin arc-smoothing vector post-processing.
 
-## Architecture
+---
 
-**GlobalGlyphTransformer** (v4-lite):
-- **CNN Encoder**: 4-stage downsampling (4→48@128→96@64→192@32→384@16) with GroupNorm + SiLU
-- **Patchify**: 1×1 conv (384→768) producing 16×16 = 256 tokens
-- **Positional Encoding**: 2D Sincos (fixed, non-learnable)
-- **Transformer**: 4 layers, d_model=768, n_heads=12, pre-norm
-- **Unpatchify**: 1×1 conv (768→384)
-- **CNN Decoder**: 4-stage upsampling with skip connections
-- **SDF Head**: Bounded flow warp + convex blend + active gate (same as v3)
+## 2. v4.0 Audit Findings & v4.1 Fixes
 
-**Parameters**: 35,988,868 (36.0M)
-**VRAM**: 3.8 GB (batch=16, 256×256 canvas)
+| Issue Found in v4.0 | Root Cause | Fix Applied in v4.1 |
+| :--- | :--- | :--- |
+| **`CnS-SkipPro-B-v4-SCVariants.otf` empty (8.9 KB, 0 glyphs)** | `v4_build_tg8105.py` instantiated `sn_jp = HBOutlineExtractor(..., ttc_index=0)` whose `get_cmds()` defaulted to `language="zh-Hans"`. HarfBuzz returned SC glyphs for `sn_jp`, making `dsc_px == 0` and misclassifying all ~1,323 SC variants as `KEEP_V1_V2`. | Replaced with `SansLightExtractor(..., language="ja"/"zh-Hans", weight=None)` and added non-empty `SCVariants` & `ids.txt` assertions. |
+| **Missing `cjkvi-ids` (`ids.txt` was 25B stub)** | `v4_download_ids.py` pointed to non-existent `Unifont/cjkvi-ids`. | Fixed URL to `cjkvi/cjkvi-ids/master/ids.txt` (88,939 lines, 2.16 MB), enabling V1/V2 exemptions (`衣/衤/礻/示`). |
+| **Wobbly straight stems & multi-inflection curves** | (1) `model_v4.py` `up0` applied `stride=2` (128→64) before `Upsample(4x)` without `f0` skip; (2) `dataset_v4.py` rotated/scaled `x` without transforming `y` and filled border with `0.0`; (3) `losses_v4.py` lacked Eikonal & curvature smoothness terms; (4) `curve_constrain.py` faithfully fit SDF noise with `max_err=1.35`. | **Scheme B**: `up0` upgraded to `128→256` with `f0` skip + `256×256 ResBlock`; synchronized `(x, y)` augmentation with `-1.0` fill & exact additive `r_u` shift; fixed Stage 1 freeze filter (`patch_conv/unpatch_conv`); added FP32 narrow-band **Eikonal**, **Curvature L1**, and **Curvature TV** losses. **Scheme A**: added Taubin λ-μ open-segment smoothing (`max_err=2.2u`) + interior-core PCA straight-stem regression preserving SkipPro's 1.8°–3.5° horizontal rise. |
+| **10 sample chars (`举领义护飞丝绸伞龙论`) regressed when v3 Master Bank synced** | `v4_build_tg8105.py` prioritized un-edited v3 2.8M U-Net `MasterDirect` and `Tier1[M:...]` splicing above v4.1 Transformer. | Pure v4 mode by default (`--use_legacy_v3_tiers` opt-in only): `ids.txt` used for V1/V2 classification only; all 4,101 missing targets route directly to v4.1 `Tier3_GlobalSDF`. |
 
-## Training
+---
 
-| Stage | Epochs | LR | Strategy | Duration |
-|-------|--------|----|----------|----------|
-| Stage 1 | 30 | 5e-5 (cosine decay) | Freeze CNN, train Transformer | ~25 min |
-| Stage 2 | 15 | 2e-5 (cosine decay) | Unfreeze all, fine-tune | ~18 min |
+## 3. Training Progression: v4.0 vs v4.1 (RTX 4090, `batch=16`)
 
-**Total training time**: ~43 min on RTX 4090 (24GB)
-**Dataset**: 7,898 chars (TG-8105 minus 14 holdout), 256×256 full glyphs
-**Augmentation**: dw jitter, r_u jitter, ±2° rotation, 0.95–1.05 scale
+* **v4.1 Schedule**: Stage 1 (5 ep, `lr=1e-4`, freeze CNN) + Stage 2 (35 ep, `lr=1e-4` cosine decay, unfreeze all), ~55 min total, peak VRAM `4.37 GB`.
+* **Dataset**: 7,898 chars (256×256 full glyphs from `FOT-SkipPro-B.OTF` & `NotoSansCJK-Regular.ttc`).
 
-### Loss Progression
+| Metric | v4.0 Final | v4.1 Final | Change |
+| :--- | :---: | :---: | :---: |
+| `sdf_l1` | `0.3098` | **`0.1393`** | `-55.0%` |
+| `grad_l1` | `0.0135` | **`0.0058`** | `-57.0%` |
+| `cldice` | `0.0447` | **`0.0241`** | `-46.1%` |
+| `soft_iou` | `0.7496` | **`0.7838`** | `+3.42 pts` |
+| `eikonal` | — | **`0.0267`** | new |
+| `curv_l1` | — | **`0.1843`** (from `0.5893`) | `-68.7%` |
 
-| Metric | Stage 1 Final | Stage 2 Final | Improvement |
-|--------|--------------|--------------|-------------|
-| SDF L1 | 0.8541 | 0.3098 | -64% |
-| Soft IoU | 0.6004 | 0.7496 | +25% |
-| clDice | 0.1775 | 0.0447 | -75% |
-| Grad L1 | 0.0219 | 0.0135 | -38% |
+---
 
-## Holdout Evaluation (14 chars)
+## 4. Full Tonggui-8105 Build Results
 
-| Metric | v4 | v3 (baseline) | Change |
-|--------|-----|--------------|--------|
-| SDF L1 (mean) | 0.0736 | ~0.35 (est.) | -79% |
-| Soft IoU (mean) | 0.8227 | ~0.74 (est.) | +11% |
-| Skeleton Chamfer (UPEM) | 9.25 | 14.52 | -36% |
-| Contour Hausdorff (UPEM) | 126.63 | 137.71 | -8% |
+| Metric | v4.0 (Initial Buggy) | v4.0 (Fixed Classifier) | v4.1 (Pure v4.1 + Scheme A/B) |
+| :--- | :---: | :---: | :---: |
+| Missing packed | `4,100 / 4,101` | `4,105 / 4,106` | **`4,094 / 4,101`** (100% `Tier3_GlobalSDF`) |
+| SCVariants packed | `0 / 0` (empty!) | `1,110 / 1,323` | **`1,031 / 1,323`** (`Tier0` 972 + `Tier3` 59) |
+| Blocked to review | `1` | `214` | `299` (`manual_review/v41_needs_review.otf`) |
+| Gate pass rate | `99.98%` | `96.06%` | `94.49%` |
+| Merged TG-8105 coverage | — | `8,104 / 8,105` | **`8,098 / 8,105`** (L1: 3496, L2: 2999, L3: 1603) |
+| `HARD_KEEP_12` point-exact | `true` | `true` | **`true`** (verified on `CnS-SkipPro-B-v41-Full.otf`) |
 
-**Note**: v3 baseline numbers from `v3_m2_ablation_report.json` (80-char eval). v4 eval is on 14 holdout chars (subset not in training).
+---
 
-### Per-Char Highlights
+## 5. Output Artifacts & Pipeline Usage
 
-| Char | SDF L1 | IoU | Chamfer | Hausdorff |
-|------|--------|-----|---------|-----------|
-| 栅 | 0.0562 | 0.899 | 5.81 | 120.78 |
-| 菜 | 0.0607 | 0.868 | 5.83 | 77.00 |
-| 洳 | 0.0710 | 0.864 | 7.01 | 164.41 |
-| 言 | 0.0935 | 0.694 | 14.95 | 135.55 |
+### Final v4.1 Artifacts
+* `outputs/CnS-SkipPro-B-v41-Full.otf` (11.0 MB, merged installable font, 5,125 injected glyphs)
+* `outputs/CnS-SkipPro-B-v41-Missing.otf` (2.23 MB, 4,094 standalone missing glyphs)
+* `outputs/CnS-SkipPro-B-v41-SCVariants.otf` (583 KB, 1,031 standalone SC variants)
+* `outputs/v41_radicals_verify.png` & `outputs/v41_vs_v40_compare.png` (visual verification sheets)
+* `checkpoints/v41_zh_sdf_global.pt` (36.0M params, auto-detected by `ZHSDFSynthesizerV4`)
 
-## TG-8105 Build Results
+### One-Click Pipeline (`scripts/v41_pipeline.py`)
+```bash
+# Sync code & ids.txt with SHA256 check
+python scripts/v41_pipeline.py sync
 
-| Metric | Value |
-|--------|-------|
-| Total TG-8105 chars | 8,105 |
-| Missing targets | 4,101 |
-| Missing packed | 4,100 (99.98%) |
-| Variants packed | 0 |
-| Blocked to review | 1 |
-| Gate pass rate | 99.98% |
-| Tier 2 (Atomic) | 1 |
-| Tier 3 (Global SDF) | 4,099 |
-| Build time | 699.7s (~12 min) |
+# Resume training from v4.1 -> v42
+python scripts/v41_pipeline.py resume --base_ckpt checkpoints/v41_zh_sdf_global.pt --tag v42 --epochs 15 --lr 2e-5
 
-### Invariants (all passed)
-- [x] Missing/variants disjoint
-- [x] Missing/base disjoint
-- [x] Variants subset of base
-- [x] Hard-keep 12 point-exact
+# Full build + merge + pull + SHA256 verify
+python scripts/v41_pipeline.py build --tag v42
 
-## Output Files
+# Visual & quantitative comparison
+python scripts/v41_pipeline.py compare --a v41 --b v42
 
-| File | Description |
-|------|-------------|
-| `outputs/CnS-SkipPro-B-v4-Missing.otf` | 4,100 synthesized missing glyphs |
-| `outputs/CnS-SkipPro-B-v4-SCVariants.otf` | SC variant glyphs (0 in this run) |
-| `outputs/v4_glyph_manifest.json` | Per-glyph manifest with tier & metrics |
-| `outputs/v4_metrics.json` | Build summary metrics |
-| `outputs/v4_eval_report.json` | Holdout evaluation details |
-| `checkpoints/v4_zh_sdf_global.pt` | Final model checkpoint (36M params) |
-
-## Known Limitations
-
-1. **ids.txt missing**: The CJK decomposition table was not available, so Tier 1 (compose from components) had no data. Only Tier 2 (1 char) and Tier 3 (4,099 chars) were used.
-2. **No leak ratio**: Noto Sans CJK is non-variable (no wght=620), so Sans 620 leak ratio could not be measured.
-3. **SC variants = 0**: The variant classifier found 0 SC variants in this run (possibly due to missing ids.txt affecting classification).
-4. **1 char blocked**: 1 character failed the structural gate and was routed to manual review.
-
-## Comparison: v4 vs v3 Architecture
-
-| Aspect | v3 (Local U-Net) | v4 (Global Transformer) |
-|--------|-----------------|------------------------|
-| Parameters | 2.8M | 36.0M |
-| Context | 96×96 random crops | 256×256 full glyph |
-| Attention | None (local conv only) | 4-layer self-attention (256 tokens) |
-| VRAM | ~1.5 GB | ~3.8 GB |
-| SDF L1 (holdout) | ~0.35 (est.) | 0.0736 |
-| IoU (holdout) | ~0.74 (est.) | 0.8227 |
-| Chamfer (UPEM) | 14.52 | 9.25 |
-| Build time | ~10 min | ~12 min |
-
-## Files Modified/Created
-
-### New (v4)
-- `src/v4/__init__.py`
-- `src/v4/model_v4.py` — GlobalGlyphTransformer
-- `src/v4/dataset_v4.py` — FullGlyphDatasetV4
-- `src/v4/losses_v4.py` — Composite loss + OCR head
-- `src/v4/synthesizer_v4.py` — ZHSDFSynthesizerV4
-- `scripts/v4_train.py` — Two-stage training
-- `scripts/v4_deploy.py` — SCP-based deployment
-- `scripts/v4_vram_test.py` — VRAM benchmark
-- `scripts/v4_scale_test.py`, `v4_scale_test2.py` — Scale testing
-- `scripts/v4_evaluate.py` — Holdout evaluation
-- `scripts/v4_build_tg8105.py` — Full TG8105 build
-- `scripts/v4_check_font.py` — Font inspection
-- `scripts/v4_test_dataset.py` — Dataset test
-- `scripts/v4_debug_pe.py`, `v4_debug_full.py` — Debug scripts
-- `scripts/v4_download_ids.py` — ids.txt downloader
-
-### Modified
-- `src/v2/hb_outlines.py` — Added `get_cmds()` convenience method to `HBOutlineExtractor`
-
-## Next Steps (Optional)
-
-1. **Scale to v4-full (8L, d=1024, ~79M params)**: VRAM headroom confirmed (6.8 GB at batch=16). Would improve quality further.
-2. **OCR feedback loop**: Deploy PaddleOCR PP-OCRv4 on RTX 3060 for automated glyph quality verification.
-3. **Re-run with proper ids.txt**: Download the full CJK decomposition table to enable Tier 1 composition.
-4. **Generate showcase image**: Side-by-side v3 vs v4 rendering of sample glyphs for visual comparison.
+# End-to-end (sync -> resume -> build+merge -> compare)
+python scripts/v41_pipeline.py all --base_ckpt checkpoints/v41_zh_sdf_global.pt --tag v42 --epochs 15 --lr 2e-5 --compare_with v41
+```

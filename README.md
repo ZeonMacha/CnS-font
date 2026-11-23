@@ -1,10 +1,53 @@
 # CnS-
 
-基于 [`FOT-SkipPro-B.OTF`](./FOT-SkipPro-B.OTF) 既有 **7,912 个原版汉字**，以 **v3.0 去皮轻骨架 + 结构优先门控 + 微差异保留 + 双独立字库分卷输出** 方案（详见 [`Plan3.0.md`](./Plan3.0.md)），在零使用思源宋体与中粗黑体轮廓的前提下，通过 **`Noto Sans CJK Light (wght=300)`**、均匀骨架距离场、双倍角切向场、Stage 0a/0b 局部手术与局部重绘、曲率掩膜曲线优化以及硬拦截门控（`StructuralGateV3`），面向 **《通用规范汉字表》8,105 全集** 完成独立分卷重构与原厂字形保护。
+基于 [`FOT-SkipPro-B.OTF`](./FOT-SkipPro-B.OTF) 既有 **7,912 个原版汉字**，面向 **《通用规范汉字表》8,105 全集** 进行简体补全、大陆规范异体字重绘与原厂字形保护。当前最新主力版本为 **v4.1（全局上下文 Transformer SDF + 曲率平滑矢量后处理）**。
 
 ---
 
-## v3.0 核心成果与下载
+## v4.1 核心成果与下载（当前推荐）
+
+> **字库产物**：
+> - **完整单包可安装字库**：[`outputs/CnS-SkipPro-B-v41-Full.otf`](./outputs/CnS-SkipPro-B-v41-Full.otf)（`11.0 MB`，原厂基底 + `4,094` 缺字补全 + `1,031` 陆标异体替换，通规 8,105 覆盖 **`8,098 / 8,105`**，`HARD_KEEP_12` 12 字逐点锁定校验通过）
+> - **独立分卷字库**：[`outputs/CnS-SkipPro-B-v41-Missing.otf`](./outputs/CnS-SkipPro-B-v41-Missing.otf)（`2.23 MB`，`4,094` 缺字） + [`outputs/CnS-SkipPro-B-v41-SCVariants.otf`](./outputs/CnS-SkipPro-B-v41-SCVariants.otf)（`583 KB`，`1,031` 异体字）
+> - **模型权重**：[`checkpoints/v41_zh_sdf_global.pt`](./checkpoints/v41_zh_sdf_global.pt)（36.0M 参数，`GlobalGlyphTransformer` v4.1 高清跳连解码器）
+
+### 1. v4.1 实测效果对比（简体偏旁、异体字与回归抽检）
+
+![CnS v4.1 简体偏旁与异体字验证](./outputs/v41_radicals_verify.png)
+
+### 2. v4.1 架构与质量升级要点（详见 [`outputs/v4_summary_report.md`](./outputs/v4_summary_report.md)）
+
+- **修复 v4.0 空异体库与旧 v3 截胡问题**：修复 `sn_jp` 语言绑定（改用 `SansLightExtractor(..., language="ja")`），补齐 `cjkvi-ids` 88,939 行拆分表用于 V1/V2 豁免分类，默认关闭未人工编辑的旧 v3 `MasterDirect` 与 `Tier1` 拼装覆盖，全部 `4,094` 缺字直出纯 v4.1 Global Transformer。
+- **生成阶段升级（方案 B）**：
+  - `model_v4.py`：`up0` 移除 `stride=2` 降采样瓶颈，改为 `128→256` 上采样 + `f0 (128×128)` skip connection + 满分辨率 `ResBlock`。
+  - `dataset_v4.py`：旋转/缩放同步作用于 `(x, y)`，背景填充 `-1.0`，修正 `r_u` 加法偏移公式。
+  - `losses_v4.py`：新增 FP32 窄带 **Eikonal Loss**、弯曲段 **曲率对齐 Loss** 与 **Curvature TV 平滑损失**；训练终值 `sdf_l1` 由 `0.3098` 降至 **`0.1393`**（`-55.0%`），`grad_l1` 降至 **`0.0058`**（`-57.0%`），`cldice` 降至 **`0.0241`**（`-46.1%`），`soft_iou` 升至 **`0.7838`**。
+- **矢量后处理升级（方案 A）**：`curve_constrain.py` 新增保端点 Taubin 低通弧段平滑、低波浪贝塞尔拟合与主体区 PCA 直笔回归（保留 SkipPro 横画自然微倾），轮廓节点数较 v4.0 精简约 40%。
+
+### 3. 傻瓜式一键流水线（续训 / 生成 / 合并 / 比对）
+
+本地 Windows 无需安装 PyTorch，直接通过 [`scripts/v41_pipeline.py`](./scripts/v41_pipeline.py) 调度 `llm24g`（RTX 4090，`comfyui` Conda 环境）并自动完成 SHA256 校验：
+
+```bash
+# 1. 同步代码与 ids.txt 至 llm24g（自动下载缺失的 ids.txt 并比对 SHA256）
+python scripts/v41_pipeline.py sync
+
+# 2. 基于 v4.1 权重续训 15 轮（不覆盖旧权重，产出新标签 v42）
+python scripts/v41_pipeline.py resume --base_ckpt checkpoints/v41_zh_sdf_global.pt --tag v42 --epochs 15 --lr 2e-5
+
+# 3. 全量生成 Missing + SCVariants + Full 合并字体，并自动拉回本地校验 SHA256
+python scripts/v41_pipeline.py build --tag v42
+
+# 4. 生成双版本量化指标差值与可视化对比图
+python scripts/v41_pipeline.py compare --a v41 --b v42 --chars "语饮汤绸坚劳览识银学驿乌袅仪轻车变锅"
+
+# 5. 一键全自动：sync -> resume -> build(+merge) -> compare（可加 --dry_run 预览）
+python scripts/v41_pipeline.py all --base_ckpt checkpoints/v41_zh_sdf_global.pt --tag v42 --epochs 15 --lr 2e-5 --compare_with v41
+```
+
+---
+
+## v3.0 历史成果与对照
 
 > **双独立字库输出（默认互不相交、不污染原厂）**：  
 > - **缺字补全独立字库**：[`outputs/CnS-SkipPro-B-v3-Missing.otf`](./outputs/CnS-SkipPro-B-v3-Missing.otf)（约 `2.2 MB`，仅包含 `.notdef` 与原字体缺失的 **`4,088`** 个简体/增补字形，`cmap ∩ FOT-SkipPro-B == ∅`）  

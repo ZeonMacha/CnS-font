@@ -126,7 +126,7 @@ class GlobalGlyphTransformer(nn.Module):
         ffn_multiplier: int = 4,
         dropout: float = 0.1,
         max_shift_px: float = 8.0,
-        delta_scale: float = 0.95,
+        delta_scale: float = 1.5,
         decoder_version: str = "v41",
     ) -> None:
         super().__init__()
@@ -293,7 +293,13 @@ class GlobalGlyphTransformer(nn.Module):
 
         base_blend = (1.0 - alpha_uni) * warped_bases[:, 0:1] + alpha_uni * warped_bases[:, 1:2]
         union_sdf = torch.maximum(ch0, ch1)
-        active_gate = torch.sigmoid((union_sdf + 0.96) * 25.0)
+        # v4.2: dilate union_sdf by +7px (15x15 max_pool) so strongly bowed SkipPro strokes (e.g. 子)
+        # up to ~23px (~107 UPEM) away from Noto Sans can be drawn without active_gate truncation.
+        if self.decoder_version == "v40":
+            active_gate = torch.sigmoid((union_sdf + 0.96) * 25.0)
+        else:
+            union_dil = F.max_pool2d(union_sdf, kernel_size=15, stride=1, padding=7)
+            active_gate = torch.sigmoid((union_dil + 0.96) * 15.0)
         pred_sdf = torch.clamp(base_blend + active_gate * delta_sdf, -1.0, 1.0)
 
         return pred_sdf, flow_px

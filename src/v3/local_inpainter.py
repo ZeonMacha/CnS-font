@@ -803,8 +803,8 @@ def _build_local_inpaint_masks(
     if int(d_local.sum()) < 4:
         d_local = s_u ^ o_u
 
-    # Include Bold SkipPro overhang extending >52u beyond Sans Light SC so JP tails aren't orphaned
-    r_sc = max(2, int(round(52.0 / upem_px)))
+    # Include Bold SkipPro overhang extending >34u beyond Sans Light SC so JP tails aren't orphaned
+    r_sc = max(2, int(round(34.0 / upem_px)))
     sc_dil = cv2.dilate(s_u.astype(np.uint8) * 255, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * r_sc + 1, 2 * r_sc + 1))) > 0
     d_local = d_local | (o_u & (~sc_dil))
 
@@ -820,7 +820,8 @@ def _build_local_inpaint_masks(
     k1 = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * r1 + 1, 2 * r1 + 1))
     m1_bin = cv2.dilate(d_local.astype(np.uint8) * 255, k1)
     m1 = cv2.GaussianBlur(m1_bin.astype(np.float32) / 255.0, (0, 0), sigmaX=3.5)
-    m1 = np.clip(np.maximum(m1, (m1_bin > 127).astype(np.float32) * 0.92), 0.0, 1.0).astype(np.float32)
+    # Use full 1.0 inside edit core to prevent 8% legacy JP SDF ghosting/seams
+    m1 = np.clip(np.maximum(m1, (m1_bin > 127).astype(np.float32)), 0.0, 1.0).astype(np.float32)
 
     ys, xs = np.where(d_local)
     m2 = _feather_box_mask(ys, xs, 78.0, upem_px, exempt_boxes, canvas_size, padding, sigma_x=4.0)
@@ -851,17 +852,32 @@ def _assemble_blended_islands(
     if not raw_blend:
         return kept_cmds, {"snapped_contours": 0, "reverted_contours": 0}
 
-    blend_isls = cmds_to_islands(raw_blend) if kept_boxes else []
-    if kept_boxes and blend_isls:
+    # Filter stray orphan blending speckles (<400 UPEM^2 with zero overlap on dilated SC ref)
+    upem_px = (1000.0 + 2.0 * 96.0) / float(S)
+    r_chk = max(1, int(round(12.0 / upem_px)))
+    sc_mask = rasterize_cmds(sc_cmds, canvas_size=S, padding=96.0).astype(np.uint8) * 255
+    sc_chk = cv2.dilate(sc_mask, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * r_chk + 1, 2 * r_chk + 1))) > 0
+
+    all_blend_isls = cmds_to_islands(raw_blend)
+    if kept_boxes and all_blend_isls:
         edited_raw: List[DrawCmd] = []
-        for b_isl in blend_isls:
+        for b_isl in all_blend_isls:
             m_b = rasterize_cmds(b_isl.cmds, canvas_size=S, padding=96.0)
-            if (m_b & m_edit_bin).any():
-                edited_raw.extend(b_isl.cmds)
+            if not (m_b & m_edit_bin).any():
+                continue
+            if abs(b_isl.area) < 400.0 and not (m_b & sc_chk).any():
+                continue
+            edited_raw.extend(b_isl.cmds)
     else:
         kept_cmds = []
         kept_boxes = []
-        edited_raw = raw_blend
+        edited_raw = []
+        for b_isl in all_blend_isls:
+            if abs(b_isl.area) < 400.0:
+                m_b = rasterize_cmds(b_isl.cmds, canvas_size=S, padding=96.0)
+                if not (m_b & sc_chk).any():
+                    continue
+            edited_raw.extend(b_isl.cmds)
 
     if not edited_raw:
         return kept_cmds, {"snapped_contours": 0, "reverted_contours": 0}
@@ -870,8 +886,8 @@ def _assemble_blended_islands(
         edited_raw,
         ref_sc_cmds=sc_cmds,
         stem_concave_sagitta=0.85,
-        max_hausdorff_upem=4.0,
-        max_area_rel=0.015,
+        max_hausdorff_upem=4.5,
+        max_area_rel=0.018,
     )
     if not kept_cmds:
         return opt_edited, opt_stats

@@ -133,21 +133,34 @@ def train(
     grad_clip: float = 1.0,
     num_workers: int = 4,
     save_every: int = 5,
+    resume_ckpt: Optional[Path] = None,
 ) -> None:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     use_amp = device.type == "cuda"
     amp_dtype = torch.bfloat16 if (use_amp and torch.cuda.is_bf16_supported()) else torch.float16
 
     # ── Model ────────────────────────────────────────────────────────
+    decoder_version = "v41"
+    resume_state = None
+    if resume_ckpt is not None:
+        if not resume_ckpt.exists():
+            raise FileNotFoundError(f"Resume checkpoint not found: {resume_ckpt}")
+        resume_state = torch.load(resume_ckpt, map_location=device, weights_only=True)
+        decoder_version = "v40" if "up0.0.weight" in resume_state else "v41"
+
     model = GlobalGlyphTransformer(
         in_channels=4,
         canvas_size=canvas_size,
         d_model=d_model,
         n_heads=n_heads,
         n_transformer_layers=n_transformer_layers,
+        decoder_version=decoder_version,
     ).to(device)
+    if resume_state is not None:
+        model.load_state_dict(resume_state)
+        print(f"[v4-Train] Resumed weights from {resume_ckpt} (decoder={decoder_version})", flush=True)
     n_params = model.count_parameters()
-    print(f"[v4-Train] Model: {n_params:,} params ({n_params / 1e6:.1f}M)", flush=True)
+    print(f"[v4-Train] Model ({decoder_version}): {n_params:,} params ({n_params / 1e6:.1f}M)", flush=True)
 
     # ── Data ─────────────────────────────────────────────────────────
     holdout = set("志洳菜嘉改栅畴逡红语银饭伞丌习乡卫专书东言直令骨微道")
@@ -168,82 +181,87 @@ def train(
     criterion = GlobalGlyphLossV4().to(device)
 
     # ── Stage 1: Freeze CNN, train Transformer ─────────────────────
-    print(f"\n[v4-Train] === Stage 1: Freeze CNN, Train Transformer ({stage1_epochs} epochs, lr={stage1_lr}) ===", flush=True)
-
-    # Freeze CNN encoder + decoder (keep Transformer + patch_conv/unpatch_conv trainable)
-    frozen_params = []
-    trainable_params = []
-    for name, param in model.named_parameters():
-        is_transformer = "transformer" in name or "patch_conv" in name or "unpatch_conv" in name
-        if is_transformer:
-            param.requires_grad = True
-            trainable_params.append(param)
-        else:
-            param.requires_grad = False
-            frozen_params.append(param)
-
-    opt1 = torch.optim.AdamW(trainable_params, lr=stage1_lr, weight_decay=weight_decay)
-
-    # Linear warmup + cosine decay
-    warmup_steps = warmup_epochs * steps_per_epoch
-    total_steps = stage1_epochs * steps_per_epoch
-
-    def lr_lambda_s1(step: int) -> float:
-        if step < warmup_steps:
-            return (step + 1) / warmup_steps
-        progress = (step - warmup_steps) / max(total_steps - warmup_steps, 1)
-        return 0.5 * (1 + np.cos(np.pi * progress))
-
-    sched1 = torch.optim.lr_scheduler.LambdaLR(opt1, lr_lambda_s1)
-
     epoch_logs: List[dict] = []
     global_step = 0
     t_start = time.time()
 
-    for ep in range(1, stage1_epochs + 1):
-        model.train()
-        t0 = time.time()
-        acc: Dict[str, float] = {}
+    if resume_ckpt is not None:
+        print("[v4-Train] Resume mode: skipping Stage 1, proceeding directly to Stage 2 fine-tuning.", flush=True)
+        stage1_epochs = 0
 
-        for batch in dataloader:
-            x, y, _ = batch
-            x = x.to(device, non_blocking=True)
-            y = y.to(device, non_blocking=True)
+    if stage1_epochs > 0:
+        print(f"\n[v4-Train] === Stage 1: Freeze CNN, Train Transformer ({stage1_epochs} epochs, lr={stage1_lr}) ===", flush=True)
 
-            opt1.zero_grad(set_to_none=True)
-            with torch.autocast(device_type=device.type, dtype=amp_dtype, enabled=use_amp):
-                pred, flow = model(x)
-                loss, m = criterion(pred, y, flow)
+        # Freeze CNN encoder + decoder (keep Transformer + patch_conv/unpatch_conv trainable)
+        frozen_params = []
+        trainable_params = []
+        for name, param in model.named_parameters():
+            is_transformer = "transformer" in name or "patch_conv" in name or "unpatch_conv" in name
+            if is_transformer:
+                param.requires_grad = True
+                trainable_params.append(param)
+            else:
+                param.requires_grad = False
+                frozen_params.append(param)
 
-            loss.backward()
-            torch.nn.utils.clip_grad_norm_(trainable_params, grad_clip)
-            opt1.step()
-            sched1.step()
-            global_step += 1
+        opt1 = torch.optim.AdamW(trainable_params, lr=stage1_lr, weight_decay=weight_decay)
 
-            for k, v in m.items():
-                acc[k] = acc.get(k, 0.0) + float(v)
+        # Linear warmup + cosine decay
+        warmup_steps = warmup_epochs * steps_per_epoch
+        total_steps = stage1_epochs * steps_per_epoch
 
-        avg_m = {k: round(v / steps_per_epoch, 5) for k, v in acc.items()}
-        avg_m["epoch"] = ep
-        avg_m["stage"] = 1
-        avg_m["lr"] = opt1.param_groups[0]["lr"]
-        avg_m["sec"] = round(time.time() - t0, 1)
-        epoch_logs.append(avg_m)
+        def lr_lambda_s1(step: int) -> float:
+            if step < warmup_steps:
+                return (step + 1) / warmup_steps
+            progress = (step - warmup_steps) / max(total_steps - warmup_steps, 1)
+            return 0.5 * (1 + np.cos(np.pi * progress))
 
-        peak_mb = torch.cuda.max_memory_allocated(device) / (1024 * 1024) if use_amp else 0
-        print(
-            f"  [S1 Ep {ep:02d}/{stage1_epochs:02d}] ({avg_m['sec']:.1f}s) lr={avg_m['lr']:.2e} | "
-            f"sdf={avg_m['sdf_l1']:.4f} grad={avg_m['grad_l1']:.4f} cldice={avg_m['cldice']:.4f} "
-            f"iou={avg_m['soft_iou']:.4f} eik={avg_m['eikonal']:.4f} curv={avg_m['curv_l1']:.4f} | VRAM={peak_mb:.0f}MB",
-            flush=True,
-        )
+        sched1 = torch.optim.lr_scheduler.LambdaLR(opt1, lr_lambda_s1)
 
-        if ep % save_every == 0:
-            tmp_ckpt = ckpt_out.with_suffix(f".s1_ep{ep}.pt")
-            tmp_ckpt.parent.mkdir(parents=True, exist_ok=True)
-            torch.save(model.state_dict(), tmp_ckpt)
-            print(f"  [S1] Checkpoint → {tmp_ckpt}", flush=True)
+        for ep in range(1, stage1_epochs + 1):
+            model.train()
+            t0 = time.time()
+            acc: Dict[str, float] = {}
+
+            for batch in dataloader:
+                x, y, _ = batch
+                x = x.to(device, non_blocking=True)
+                y = y.to(device, non_blocking=True)
+
+                opt1.zero_grad(set_to_none=True)
+                with torch.autocast(device_type=device.type, dtype=amp_dtype, enabled=use_amp):
+                    pred, flow = model(x)
+                    loss, m = criterion(pred, y, flow)
+
+                loss.backward()
+                torch.nn.utils.clip_grad_norm_(trainable_params, grad_clip)
+                opt1.step()
+                sched1.step()
+                global_step += 1
+
+                for k, v in m.items():
+                    acc[k] = acc.get(k, 0.0) + float(v)
+
+            avg_m = {k: round(v / steps_per_epoch, 5) for k, v in acc.items()}
+            avg_m["epoch"] = ep
+            avg_m["stage"] = 1
+            avg_m["lr"] = opt1.param_groups[0]["lr"]
+            avg_m["sec"] = round(time.time() - t0, 1)
+            epoch_logs.append(avg_m)
+
+            peak_mb = torch.cuda.max_memory_allocated(device) / (1024 * 1024) if use_amp else 0
+            print(
+                f"  [S1 Ep {ep:02d}/{stage1_epochs:02d}] ({avg_m['sec']:.1f}s) lr={avg_m['lr']:.2e} | "
+                f"sdf={avg_m['sdf_l1']:.4f} grad={avg_m['grad_l1']:.4f} cldice={avg_m['cldice']:.4f} "
+                f"iou={avg_m['soft_iou']:.4f} eik={avg_m['eikonal']:.4f} curv={avg_m['curv_l1']:.4f} | VRAM={peak_mb:.0f}MB",
+                flush=True,
+            )
+
+            if ep % save_every == 0:
+                tmp_ckpt = ckpt_out.with_suffix(f".s1_ep{ep}.pt")
+                tmp_ckpt.parent.mkdir(parents=True, exist_ok=True)
+                torch.save(model.state_dict(), tmp_ckpt)
+                print(f"  [S1] Checkpoint → {tmp_ckpt}", flush=True)
 
     # ── Stage 2: Unfreeze all, fine-tune end-to-end ────────────────
     print(f"\n[v4-Train] === Stage 2: Unfreeze All, Fine-tune ({stage2_epochs} epochs, lr={stage2_lr}) ===", flush=True)
@@ -333,6 +351,8 @@ def train(
         "total_time_sec": round(total_time, 1),
         "epoch_logs": epoch_logs,
         "checkpoint": str(ckpt_out),
+        "resumed_from": str(resume_ckpt) if resume_ckpt is not None else None,
+        "decoder_version": decoder_version,
     }
     out_json.parent.mkdir(parents=True, exist_ok=True)
     out_json.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -364,6 +384,7 @@ def main() -> None:
     parser.add_argument("--grad_clip", type=float, default=1.0)
     parser.add_argument("--num_workers", type=int, default=4)
     parser.add_argument("--save_every", type=int, default=5)
+    parser.add_argument("--resume", type=Path, default=None, help="Resume fine-tuning from an existing checkpoint")
 
     # VRAM test mode
     parser.add_argument("--test_vram", action="store_true", help="Run VRAM test and exit")
@@ -400,6 +421,7 @@ def main() -> None:
         grad_clip=args.grad_clip,
         num_workers=args.num_workers,
         save_every=args.save_every,
+        resume_ckpt=args.resume,
     )
 
 
