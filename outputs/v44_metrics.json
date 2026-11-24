@@ -1,0 +1,34 @@
+{
+  "elapsed_sec": 958.6,
+  "tonggui_total": 8105,
+  "missing_targets": 4101,
+  "missing_packed": 4091,
+  "variant_targets": 1320,
+  "variants_packed": 952,
+  "blocked_to_review": 378,
+  "gate_pass_rate": 0.9303,
+  "sc_variant_tier0_share": 0.0,
+  "tier_breakdown_missing": {
+    "Tier3_GlobalSDF": 4091
+  },
+  "tier_breakdown_variants": {
+    "Tier3_GlobalSDF": 952
+  },
+  "keep_policy_12_tg": 8,
+  "keep_same_gid": 1453,
+  "keep_v1_v2_exempt": 349,
+  "keep_already_sc": 874,
+  "merged_tg_coverage_by_level": {
+    "1": 3496,
+    "2": 2998,
+    "3": 1601
+  },
+  "merged_tg_total_covered": 8095,
+  "model": "GlobalGlyphTransformer d=768 L=4 H=12",
+  "invariants": {
+    "missing_disjoint_variants": true,
+    "missing_disjoint_base": true,
+    "variants_subset_base": true,
+    "hard_keep_12_point_exact": true
+  }
+}

@@ -140,13 +140,18 @@ def train(
     amp_dtype = torch.bfloat16 if (use_amp and torch.cuda.is_bf16_supported()) else torch.float16
 
     # ── Model ────────────────────────────────────────────────────────
-    decoder_version = "v41"
+    decoder_version = "v44"
     resume_state = None
     if resume_ckpt is not None:
         if not resume_ckpt.exists():
             raise FileNotFoundError(f"Resume checkpoint not found: {resume_ckpt}")
         resume_state = torch.load(resume_ckpt, map_location=device, weights_only=True)
-        decoder_version = "v40" if "up0.0.weight" in resume_state else "v41"
+        if "up0.0.weight" in resume_state:
+            decoder_version = "v40"
+        elif "sdf_head.1.weight" in resume_state:
+            decoder_version = "v44"
+        else:
+            decoder_version = "v41"
 
     model = GlobalGlyphTransformer(
         in_channels=4,

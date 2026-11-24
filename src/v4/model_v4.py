@@ -127,7 +127,7 @@ class GlobalGlyphTransformer(nn.Module):
         dropout: float = 0.1,
         max_shift_px: float = 8.0,
         delta_scale: float = 1.5,
-        decoder_version: str = "v41",
+        decoder_version: str = "v44",
     ) -> None:
         super().__init__()
         self.canvas_size = canvas_size
@@ -220,12 +220,19 @@ class GlobalGlyphTransformer(nn.Module):
         nn.init.zeros_(self.flow_head.weight)
         nn.init.zeros_(self.flow_head.bias)
 
-        self.refine_head = nn.Sequential(
-            CNNBlock(c_final + 2, c1),
-            nn.Conv2d(c1, 2, kernel_size=3, padding=1),
-        )
-        nn.init.zeros_(self.refine_head[-1].weight)
-        nn.init.zeros_(self.refine_head[-1].bias)
+        if decoder_version == "v44":
+            # v4.4 direct SDF prediction head: eliminates base_blend trunc_px=16 hard-clip 90deg step
+            self.sdf_head = nn.Sequential(
+                CNNBlock(c_final + 2, c1),
+                nn.Conv2d(c1, 1, kernel_size=3, padding=1),
+            )
+        else:
+            self.refine_head = nn.Sequential(
+                CNNBlock(c_final + 2, c1),
+                nn.Conv2d(c1, 2, kernel_size=3, padding=1),
+            )
+            nn.init.zeros_(self.refine_head[-1].weight)
+            nn.init.zeros_(self.refine_head[-1].bias)
 
     @staticmethod
     def _warp_tensor(x: torch.Tensor, flow_px: torch.Tensor) -> torch.Tensor:
@@ -287,20 +294,21 @@ class GlobalGlyphTransformer(nn.Module):
         flow_px = self.max_shift_px * torch.tanh(self.flow_head(u0))
         warped_bases = self._warp_tensor(torch.cat([ch0, ch1], dim=1), flow_px)
 
-        head_out = self.refine_head(torch.cat([u0, warped_bases], dim=1))
-        alpha_uni = torch.sigmoid(head_out[:, 0:1])
-        delta_sdf = self.delta_scale * torch.tanh(head_out[:, 1:2])
-
-        base_blend = (1.0 - alpha_uni) * warped_bases[:, 0:1] + alpha_uni * warped_bases[:, 1:2]
-        union_sdf = torch.maximum(ch0, ch1)
-        # v4.2: dilate union_sdf by +7px (15x15 max_pool) so strongly bowed SkipPro strokes (e.g. 子)
-        # up to ~23px (~107 UPEM) away from Noto Sans can be drawn without active_gate truncation.
-        if self.decoder_version == "v40":
-            active_gate = torch.sigmoid((union_sdf + 0.96) * 25.0)
+        if self.decoder_version == "v44":
+            pred_sdf = torch.tanh(self.sdf_head(torch.cat([u0, warped_bases], dim=1)))
         else:
-            union_dil = F.max_pool2d(union_sdf, kernel_size=15, stride=1, padding=7)
-            active_gate = torch.sigmoid((union_dil + 0.96) * 15.0)
-        pred_sdf = torch.clamp(base_blend + active_gate * delta_sdf, -1.0, 1.0)
+            head_out = self.refine_head(torch.cat([u0, warped_bases], dim=1))
+            alpha_uni = torch.sigmoid(head_out[:, 0:1])
+            delta_sdf = self.delta_scale * torch.tanh(head_out[:, 1:2])
+
+            base_blend = (1.0 - alpha_uni) * warped_bases[:, 0:1] + alpha_uni * warped_bases[:, 1:2]
+            union_sdf = torch.maximum(ch0, ch1)
+            if self.decoder_version == "v40":
+                active_gate = torch.sigmoid((union_sdf + 0.96) * 25.0)
+            else:
+                union_dil = F.max_pool2d(union_sdf, kernel_size=15, stride=1, padding=7)
+                active_gate = torch.sigmoid((union_dil + 0.96) * 15.0)
+            pred_sdf = torch.clamp(base_blend + active_gate * delta_sdf, -1.0, 1.0)
 
         return pred_sdf, flow_px
 

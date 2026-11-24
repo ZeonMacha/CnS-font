@@ -52,8 +52,13 @@ class ZHSDFSynthesizerV4:
         self.trunc_px = 16.0 * (canvas_size / 256.0)
 
         state = torch.load(ckpt_path, map_location=self.device, weights_only=True)
-        # Auto-detect v4.0 (legacy stride-2 up0) vs v4.1 (128x128 skip up0) from checkpoint keys
-        decoder_version = "v40" if "up0.0.weight" in state else "v41"
+        # Auto-detect v4.0 (legacy stride-2 up0) vs v4.1 (residual skip up0) vs v4.4 (direct SDF head)
+        if "up0.0.weight" in state:
+            decoder_version = "v40"
+        elif "sdf_head.1.weight" in state:
+            decoder_version = "v44"
+        else:
+            decoder_version = "v41"
 
         self.model = GlobalGlyphTransformer(
             in_channels=4, canvas_size=canvas_size,
