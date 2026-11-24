@@ -1,0 +1,37 @@
+{
+  "elapsed_sec": 2494.1,
+  "tonggui_total": 8105,
+  "missing_targets": 4101,
+  "missing_packed": 4089,
+  "variant_targets": 1422,
+  "variants_packed": 961,
+  "blocked_to_review": 473,
+  "gate_pass_rate": 0.9144,
+  "zero_mid_share": 0.4572,
+  "total_snapped_segs": 0,
+  "total_reverted_contours": 1662,
+  "total_dropped_speckles": 20,
+  "tier_breakdown_missing": {
+    "Tier3_GlobalSDF_v45": 4089
+  },
+  "tier_breakdown_variants": {
+    "Tier3_GlobalSDF_v45": 961
+  },
+  "keep_policy_12_tg": 8,
+  "keep_same_gid": 1453,
+  "keep_v1_v2_exempt": 395,
+  "keep_already_sc": 726,
+  "merged_tg_coverage_by_level": {
+    "1": 3494,
+    "2": 2998,
+    "3": 1601
+  },
+  "merged_tg_total_covered": 8093,
+  "model": "GlobalGlyphTransformerV45 d=768 L=4 H=12 max_shift=14.0",
+  "invariants": {
+    "missing_disjoint_variants": true,
+    "missing_disjoint_base": true,
+    "variants_subset_base": true,
+    "hard_keep_12_point_exact": true
+  }
+}
