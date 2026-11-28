@@ -151,22 +151,44 @@ def _detect_corners(p: np.ndarray, prm: VecParams) -> List[int]:
     return sorted(corners)
 
 
-def _taubin_open(seg: np.ndarray, iters: int, lam: float = 0.5, mu: float = -0.53) -> np.ndarray:
-    if len(seg) < 5 or iters <= 0:
+def _taubin_open(seg: np.ndarray, iters: int, lam: float = 0.5, mu: float = -0.52, half_win: int = 3) -> np.ndarray:
+    """Multi-hop (6u at step_u=2u) Taubin low-pass filter on open sections with pinned endpoints.
+
+    A 1-hop stencil at 2u only attenuates wavelengths < 26u (already removed by pre_sigma_px) and
+    leaves 25-60u SDF iso-line ripples untouched. A 3-hop (6u) symmetric window shifts the cutoff
+    to ~65u while keeping zero shrinkage (lam + mu < 0) on genuine stroke arcs (R >= 150u).
+    """
+    n = len(seg)
+    if n < 5 or iters <= 0:
         return seg
     p = seg.astype(np.float64, copy=True)
+    m = max(1, int(half_win))
     for _ in range(iters):
         for w in (lam, mu):
-            lap = 0.5 * (p[:-2] + p[2:]) - p[1:-1]
-            p[1:-1] = p[1:-1] + w * lap
+            q = p.copy()
+            for i in range(1, n - 1):
+                r = min(m, i, n - 1 - i)
+                acc = np.zeros(2, dtype=np.float64)
+                for k in range(1, r + 1):
+                    acc += q[i - k] + q[i + k]
+                lap = acc / (2.0 * r) - q[i]
+                p[i] = q[i] + w * lap
     return p
 
 
-def _taubin_closed(p: np.ndarray, iters: int, lam: float = 0.5, mu: float = -0.53) -> np.ndarray:
+def _taubin_closed(p: np.ndarray, iters: int, lam: float = 0.5, mu: float = -0.52, half_win: int = 3) -> np.ndarray:
+    """Multi-hop Taubin low-pass filter on closed loops."""
+    n = len(p)
+    if n < 6 or iters <= 0:
+        return p.astype(np.float64, copy=True)
     q = p.astype(np.float64, copy=True)
+    m = max(1, min(int(half_win), n // 4))
     for _ in range(iters):
         for w in (lam, mu):
-            lap = 0.5 * (np.roll(q, 1, 0) + np.roll(q, -1, 0)) - q
+            acc = np.zeros_like(q)
+            for k in range(1, m + 1):
+                acc += np.roll(q, k, axis=0) + np.roll(q, -k, axis=0)
+            lap = acc / (2.0 * m) - q
             q = q + w * lap
     return q
 
@@ -376,6 +398,29 @@ def _extrema_splits(seg: np.ndarray, prm: VecParams) -> List[Tuple[int, np.ndarr
     return pruned
 
 
+def _try_single_cubic(pts: np.ndarray, t0: np.ndarray, t1: np.ndarray, tol: float) -> Optional[Seg]:
+    """Attempt a single tangent-constrained cubic fit before splitting at extrema."""
+    if len(pts) < 2:
+        return None
+    chord = float(np.linalg.norm(pts[-1] - pts[0]))
+    if len(pts) == 2 or chord < 1e-6:
+        L = chord / 3.0
+        return Seg("C", pts[0].copy(), pts[-1].copy(), pts[0] + L * t0, pts[-1] + L * t1)
+    u = _chord_param(pts)
+    bez = _gen_bezier(pts, u, t0, t1)
+    err, _ = _max_err(pts, bez, u)
+    if err <= tol:
+        return Seg("C", bez[0].copy(), bez[3].copy(), bez[1], bez[2])
+    if err <= tol * 3.0:
+        for _ in range(4):
+            u = _reparam(pts, bez, u)
+            bez = _gen_bezier(pts, u, t0, t1)
+            err, _ = _max_err(pts, bez, u)
+            if err <= tol:
+                return Seg("C", bez[0].copy(), bez[3].copy(), bez[1], bez[2])
+    return None
+
+
 def _fit_section(seg: np.ndarray, prm: VecParams, st: VecStats, t_start: Optional[np.ndarray] = None,
                  t_end: Optional[np.ndarray] = None) -> List[Seg]:
     """Fit an open polyline section between two corners (or a smooth closed loop cut at extrema)."""
@@ -419,6 +464,15 @@ def _fit_section(seg: np.ndarray, prm: VecParams, st: VecStats, t_start: Optiona
         else:
             t1 = (-t_end) if (t_end is not None and b == len(seg) - 1) else -_end_tangent(sub, False, step=prm.step_u)
             sm1 = t_end is not None and b == len(seg) - 1
+
+        # Fit-first, split-only-on-failure: avoids chopping gentle diagonal strokes (e.g. 纟 撇) at tiny ripples
+        whole_seg = _try_single_cubic(sub, _unit(t0), _unit(t1), prm.fit_tol_u)
+        if whole_seg is not None:
+            whole_seg.smooth_start = sm0
+            whole_seg.smooth_end = sm1
+            out.append(whole_seg)
+            continue
+
         # split at H/V extrema with exact axis tangents
         ex = _extrema_splits(sub, prm)
         cuts = [0] + [i for i, _ in ex] + [len(sub) - 1]
@@ -428,7 +482,7 @@ def _fit_section(seg: np.ndarray, prm: VecParams, st: VecStats, t_start: Optiona
         for ci in range(len(cuts) - 1):
             ia, ib = cuts[ci], cuts[ci + 1]
             part = sub[ia : ib + 1]
-            ta = tans[ci] if ci == 0 else tans[ci]
+            ta = tans[ci]
             tb = t1 if ci == len(cuts) - 2 else -tans[ci + 1]
             fitted = _fit_cubic(part, _unit(ta), _unit(tb), prm.fit_tol_u)
             if ci > 0:
@@ -439,26 +493,27 @@ def _fit_section(seg: np.ndarray, prm: VecParams, st: VecStats, t_start: Optiona
         segs_piece[0].smooth_start = segs_piece[0].smooth_start or sm0
         segs_piece[-1].smooth_end = segs_piece[-1].smooth_end or sm1
         out.extend(segs_piece)
-    return _absorb_fillets(out, prm)
+    return _absorb_fillets(out, prm, closed=False)
 
 
 def _seg_len(s: Seg) -> float:
     return float(np.linalg.norm(s.p3 - s.p0))
 
 
-def _absorb_fillets(segs: List[Seg], prm: VecParams) -> List[Seg]:
-    """Remove short curve stubs at section ends / between lines so SkipPro-style crisp corners survive."""
+def _absorb_fillets(segs: List[Seg], prm: VecParams, closed: bool = False) -> List[Seg]:
+    """Remove short curve stubs at corners / between lines or curves so crisp corners survive without double nodes."""
     if len(segs) <= 1:
         return segs
     out = list(segs)
     changed = True
     while changed and len(out) > 1:
         changed = False
+        n = len(out)
         for i, s in enumerate(out):
             if s.kind != "C" or _seg_len(s) >= prm.fillet_absorb_u:
                 continue
-            prev = out[i - 1] if i > 0 else None
-            nxt = out[i + 1] if i + 1 < len(out) else None
+            prev = out[(i - 1) % n] if (closed or i > 0) else None
+            nxt = out[(i + 1) % n] if (closed or i + 1 < n) else None
             if prev is None and nxt is not None and nxt.kind == "L":
                 nxt.p0 = s.p0.copy(); nxt.smooth_start = False
                 out.pop(i); changed = True; break
@@ -475,6 +530,49 @@ def _absorb_fillets(segs: List[Seg], prm: VecParams) -> List[Seg]:
                     if float(np.linalg.norm(x - s.p0)) <= 2.0 * prm.fillet_absorb_u:
                         prev.p3 = x.copy(); nxt.p0 = x.copy()
                         prev.smooth_end = False; nxt.smooth_start = False
+                        out.pop(i); changed = True; break
+            # Absorb short curve stub adjacent to a line or between two curves without tilting lines
+            if prev is not None and nxt is not None and (prev.kind == "C" or nxt.kind == "C"):
+                stub_len = _seg_len(s)
+                if stub_len < 0.75 * prm.fillet_absorb_u and _seg_len(prev) > 2.0 * stub_len and _seg_len(nxt) > 2.0 * stub_len:
+                    mid = 0.5 * (s.p0 + s.p3)
+                    join: Optional[np.ndarray] = None
+                    if prev.kind == "L" and nxt.kind == "C":
+                        # Project onto prev's exact line direction so near-H/V stems never tilt
+                        u_prev = _unit(prev.p3 - prev.p0)
+                        proj = prev.p0 + float(np.dot(mid - prev.p0, u_prev)) * u_prev
+                        if float(np.linalg.norm(proj - prev.p3)) <= 1.5 * prm.fillet_absorb_u:
+                            join = proj
+                    elif prev.kind == "C" and nxt.kind == "L":
+                        # Project onto nxt's exact line direction
+                        u_nxt = _unit(nxt.p3 - nxt.p0)
+                        proj = nxt.p0 + float(np.dot(mid - nxt.p0, u_nxt)) * u_nxt
+                        if float(np.linalg.norm(proj - nxt.p0)) <= 1.5 * prm.fillet_absorb_u:
+                            join = proj
+                    else:
+                        # Curve-curve corner: intersect end tangents when crisp, else fall back to midpoint
+                        t_in = _unit(prev.p3 - (prev.c2 if prev.c2 is not None else prev.p0))
+                        t_out = _unit((nxt.c1 if nxt.c1 is not None else nxt.p3) - nxt.p0)
+                        den = t_in[0] * t_out[1] - t_in[1] * t_out[0]
+                        if abs(den) > 0.25:
+                            tau = ((nxt.p0 - prev.p3)[0] * t_out[1] - (nxt.p0 - prev.p3)[1] * t_out[0]) / den
+                            cand_x = prev.p3 + tau * t_in
+                            if float(np.linalg.norm(cand_x - mid)) <= 1.2 * prm.fillet_absorb_u:
+                                join = cand_x
+                        if join is None:
+                            join = mid
+
+                    if join is not None:
+                        d_prev = join - prev.p3
+                        d_nxt = join - nxt.p0
+                        prev.p3 = join.copy()
+                        if prev.kind == "C" and prev.c2 is not None:
+                            prev.c2 = prev.c2 + 0.5 * d_prev
+                        nxt.p0 = join.copy()
+                        if nxt.kind == "C" and nxt.c1 is not None:
+                            nxt.c1 = nxt.c1 + 0.5 * d_nxt
+                        prev.smooth_end = False
+                        nxt.smooth_start = False
                         out.pop(i); changed = True; break
     return out
 
@@ -670,22 +768,33 @@ def polylines_to_cmds(polys: List[np.ndarray], prm: Optional[VecParams] = None,
         want_ccw = d % 2 == 0
         if (_signed_area(p) > 0) != want_ccw:
             p = p[::-1].copy()
-        segs = _fit_closed(p, prm, st, prm.smooth_iters)
+        st_c = VecStats()
+        segs = _fit_closed(p, prm, st_c, prm.smooth_iters)
         if not segs:
             continue
-        _snap_axis(segs, prm, st)
+        segs = _absorb_fillets(segs, prm, closed=True)
+        _snap_axis(segs, prm, st_c)
         samp = _sample_segs(segs)
         dv, _ = cKDTree(samp).query(p)
-        if float(dv.max()) > prm.verify_tol_u:
+        # Only refit without smoothing when p95 or extreme max deviation truly exceeds tolerance
+        if prm.smooth_iters > 0 and (
+            float(np.percentile(dv, 95)) > prm.verify_tol_u * 0.85 or float(dv.max()) > prm.verify_tol_u * 1.35
+        ):
             st.refits += 1
-            segs2 = _fit_closed(p, prm, st, 0)
-            _snap_axis(segs2, prm, st)
-            samp2 = _sample_segs(segs2)
-            dv2, _ = cKDTree(samp2).query(p)
-            if float(dv2.max()) < float(dv.max()):
-                segs, dv = segs2, dv2
+            st_c2 = VecStats()
+            segs2 = _fit_closed(p, prm, st_c2, 0)
+            if segs2:
+                segs2 = _absorb_fillets(segs2, prm, closed=True)
+                _snap_axis(segs2, prm, st_c2)
+                samp2 = _sample_segs(segs2)
+                dv2, _ = cKDTree(samp2).query(p)
+                if float(dv2.max()) < float(dv.max()):
+                    segs, dv, st_c = segs2, dv2, st_c2
         devs.append(dv)
         st.contours += 1
+        st.corners += st_c.corners
+        st.extrema_splits += st_c.extrema_splits
+        st.axis_snapped += st_c.axis_snapped
         st.lines += sum(1 for s in segs if s.kind == "L")
         st.curves += sum(1 for s in segs if s.kind == "C")
         st.contour_len_u += float(np.sum(np.linalg.norm(np.diff(np.vstack([p, p[:1]]), axis=0), axis=1)))
@@ -706,16 +815,18 @@ def sdf_to_cmds_v46(sdf: np.ndarray, prm: Optional[VecParams] = None) -> Tuple[L
 
 
 def cmds_to_polylines(cmds: Sequence[DrawCmd], step: float = 1.5) -> List[np.ndarray]:
-    """Flatten DrawCmds into closed polylines (UPEM) for re-vectorization of existing font glyphs."""
+    """Flatten DrawCmds into closed polylines (UPEM), explicitly sampling implicit closePath segments."""
     polys: List[np.ndarray] = []
     cur: List[Tuple[float, float]] = []
     pos = (0.0, 0.0)
+    start = (0.0, 0.0)
     for op, cp in cmds:
         if op == "moveTo":
             if len(cur) >= 3:
                 polys.append(np.array(cur))
             cur = [tuple(cp[0])]
             pos = cp[0]
+            start = cp[0]
         elif op == "lineTo":
             p0 = np.array(pos); p1 = np.array(cp[0])
             k = max(1, int(np.linalg.norm(p1 - p0) / step))
@@ -731,6 +842,14 @@ def cmds_to_polylines(cmds: Sequence[DrawCmd], step: float = 1.5) -> List[np.nda
                 cur.append((float(q[0]), float(q[1])))
             pos = cp[2]
         elif op == "closePath":
+            p0 = np.array(pos); p1 = np.array(start)
+            dist_close = float(np.linalg.norm(p1 - p0))
+            if dist_close > 1e-6:
+                k = max(1, int(dist_close / step))
+                for t in np.linspace(0, 1, k + 1)[1:]:
+                    q = p0 + t * (p1 - p0)
+                    cur.append((float(q[0]), float(q[1])))
+            pos = start
             if len(cur) >= 3:
                 polys.append(np.array(cur))
             cur = []

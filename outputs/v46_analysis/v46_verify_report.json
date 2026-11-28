@@ -1,0 +1,62 @@
+[
+  {
+    "char": "䌹",
+    "iou_v46_vs_ref": 0.6139,
+    "sdf_l1_v46_vs_ref": 0.1915
+  },
+  {
+    "char": "䜣",
+    "iou_v46_vs_ref": 0.5985,
+    "sdf_l1_v46_vs_ref": 0.1983
+  },
+  {
+    "char": "狱",
+    "iou_v46_vs_ref": 0.6292,
+    "sdf_l1_v46_vs_ref": 0.1777
+  },
+  {
+    "char": "纡",
+    "iou_v46_vs_ref": 0.6151,
+    "sdf_l1_v46_vs_ref": 0.1753
+  },
+  {
+    "char": "红",
+    "iou_v46_vs_ref": 0.6834,
+    "sdf_l1_v46_vs_ref": 0.1451
+  },
+  {
+    "char": "纣",
+    "iou_v46_vs_ref": 0.5711,
+    "sdf_l1_v46_vs_ref": 0.1995
+  },
+  {
+    "char": "纤",
+    "iou_v46_vs_ref": 0.5656,
+    "sdf_l1_v46_vs_ref": 0.1995
+  },
+  {
+    "char": "纥",
+    "iou_v46_vs_ref": 0.6698,
+    "sdf_l1_v46_vs_ref": 0.1552
+  },
+  {
+    "char": "级",
+    "iou_v46_vs_ref": 0.6451,
+    "sdf_l1_v46_vs_ref": 0.1829
+  },
+  {
+    "char": "纨",
+    "iou_v46_vs_ref": 0.6263,
+    "sdf_l1_v46_vs_ref": 0.1805
+  },
+  {
+    "char": "纩",
+    "iou_v46_vs_ref": 0.678,
+    "sdf_l1_v46_vs_ref": 0.1242
+  },
+  {
+    "char": "纪",
+    "iou_v46_vs_ref": 0.6393,
+    "sdf_l1_v46_vs_ref": 0.1736
+  }
+]

@@ -1,0 +1,23 @@
+{
+  "si_radical": {
+    "n": 164,
+    "pass_rate": 0.7744,
+    "mean_score": 92.5,
+    "mean_instability_var": 0.00201,
+    "mean_pairwise_iou": 0.9391
+  },
+  "simp_other": {
+    "n": 6,
+    "pass_rate": 0.8333,
+    "mean_score": 94.07,
+    "mean_instability_var": 0.00281,
+    "mean_pairwise_iou": 0.9329
+  },
+  "yan_radical": {
+    "n": 157,
+    "pass_rate": 0.8917,
+    "mean_score": 100.64,
+    "mean_instability_var": 0.00145,
+    "mean_pairwise_iou": 0.9485
+  }
+}
